@@ -3,18 +3,18 @@ pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HealthFactor} from "./HealthFactor.sol";
-import {Helpers} from "./Helpers.sol";
+import {Inheritance} from "./Inheritance.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleLib} from "./libraries/OracleLib.sol";
 
-contract LendingEngine is Helpers {
+contract LendingEngine is Inheritance {
     ///////////////////
     //     Type     //
     //////////////////
     using OracleLib for AggregatorV3Interface;
 
     constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses)
-        Helpers(tokenAddresses, priceFeedAddresses)
+        Inheritance(tokenAddresses, priceFeedAddresses)
     {}
 
     ///////////////////////////////

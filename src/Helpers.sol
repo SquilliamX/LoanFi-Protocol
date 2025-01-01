@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleLib} from "./libraries/OracleLib.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {HealthFactor} from "./HealthFactor.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract Helpers is ReentrancyGuard {
     ///////////////////////////////
@@ -19,6 +19,7 @@ contract Helpers is ReentrancyGuard {
     error BorrowingEngine__TransferFailed();
     error BorrowingEngine__NotEnoughBorrowedAmount();
     error BorrowingEngine__ZeroAddressNotAllowed();
+    error LendingEngine__NotEnoughAvailableTokens();
 
     // Tracks how much collateral each user has deposited
     // First key: user's address
@@ -143,6 +144,49 @@ contract Helpers is ReentrancyGuard {
         // 2. Multiply by the token amount
         // 3. Divide by PRECISION(1e18(for precision)) to get the final USD value with correct decimal places
         return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
+    }
+
+    function getTotalCollateralOfToken(address token) internal view returns (uint256 totalCollateral) {
+        // loop through the allowed collateral tokens
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            // if the token inputted by the caller is in the loop, then
+            if (s_collateralTokens[i] == token) {
+                // Get actual token balance of contract
+                totalCollateral = IERC20(token).balanceOf(address(this));
+                // exit loop immediately
+                break;
+            }
+        }
+        // return the total amount of collateral of these tokens
+        return totalCollateral;
+    }
+
+    function getAvailableToBorrow(address token) internal view returns (uint256) {
+        // Get total amount of this token deposited as collateral
+        uint256 totalCollateral = getTotalCollateralOfToken(token);
+
+        // Get total amount already borrowed of this token
+        uint256 totalBorrowed = getTotalBorrowedOfToken(token);
+
+        // Available = Total Collateral - Total Borrowed
+        return totalCollateral - totalBorrowed;
+    }
+
+    function getTotalBorrowedOfToken(address token) internal view returns (uint256 totalBorrowed) {
+        // loop through the allowed collateral tokens
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            // if the token inputted by the caller is in the loop, then
+            if (s_collateralTokens[i] == token) {
+                // Sum up all borrowed amounts of this token across users
+                for (uint256 j = 0; j < s_collateralTokens.length; j++) {
+                    totalBorrowed += getTokenBorrowed()[msg.sender][token];
+                }
+                // exit loop immediately
+                break;
+            }
+        }
+        // return the total amount borrowed of these tokens
+        return totalBorrowed;
     }
 
     function getMinimumHealthFactor() internal pure returns (uint256) {

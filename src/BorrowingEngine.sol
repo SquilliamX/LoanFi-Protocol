@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {LendingEngine} from "./LendingEngine.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {HealthFactor} from "./HealthFactor.sol";
+import {Inheritance} from "./Inheritance.sol";
 
-contract BorrowingEngine is HealthFactor {
+contract BorrowingEngine is Inheritance {
     ///////////////////////////////
     //         Functions         //
     ///////////////////////////////
 
     constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses)
-        HealthFactor(tokenAddresses, priceFeedAddresses)
+        Inheritance(tokenAddresses, priceFeedAddresses)
     {}
 
     function borrowFunds(address tokenToBorrow, uint256 amountToBorrow)
@@ -42,6 +41,13 @@ contract BorrowingEngine is HealthFactor {
         nonReentrant
         isAllowedToken(tokenToBorrow)
     {
+        // get the amount available to borrow
+        uint256 availableToBorrow = getAvailableToBorrow(tokenToBorrow);
+        // if user is trying to borrow more than available, revert
+        if (amountToBorrow > availableToBorrow) {
+            revert LendingEngine__NotEnoughAvailableTokens();
+        }
+
         // Get USD value of borrow amount
         uint256 borrowAmountInUsd = _getUsdValue(tokenToBorrow, amountToBorrow);
 
