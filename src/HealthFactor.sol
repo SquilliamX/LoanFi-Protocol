@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Helpers} from "./Helpers.sol";
+import {CoreStorage} from "./CoreStorage.sol";
 
-contract HealthFactor is Helpers {
+contract HealthFactor is CoreStorage {
     constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses)
-        Helpers(tokenAddresses, priceFeedAddresses)
+        CoreStorage(tokenAddresses, priceFeedAddresses)
     {}
 
     function calculateHealthFactor(uint256 totalAmountBorrowed, uint256 collateralValueInUsd)

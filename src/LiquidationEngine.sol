@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Helpers} from "./Helpers.sol";
+import {Inheritance} from "./Inheritance.sol";
 
-contract LiquidationEngine is Helpers {
+contract LiquidationEngine is Inheritance {
     constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses)
-        Helpers(tokenAddresses, priceFeedAddresses)
+        Inheritance(tokenAddresses, priceFeedAddresses)
     {}
 }

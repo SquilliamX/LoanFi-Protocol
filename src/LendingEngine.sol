@@ -43,7 +43,7 @@ contract LendingEngine is Inheritance {
         // require(s_balances[msg.sender] >= amountCollateralSent, "Not Enough"); // this is no good because string revert messages cost TOO MUCH GAS!
 
         // require the user to have more money in his wallet than he is sending, otherwise revert
-        if (getBalances()[msg.sender] < amountCollateralSent) {
+        if (balanceOf(msg.sender) < amountCollateralSent) {
             revert LendingEngine__YouNeedMoreFunds();
         }
         // we update state here, so when we update state, we must emit an event.
