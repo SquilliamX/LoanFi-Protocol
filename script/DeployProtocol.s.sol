@@ -17,19 +17,22 @@ contract DeployProtocol is Script {
     address[] public tokenAddresses;
     address[] public priceFeedAddresses;
 
-    function run()
-        external
-        returns (
-            CoreStorage,
-            HealthFactor,
-            LendingEngine,
-            BorrowingEngine,
-            WithdrawEngine,
-            InterestRateEngine,
-            LiquidationEngine,
-            HelperConfig
-        )
-    {
+    struct Contracts {
+        CoreStorage coreStorage;
+        HealthFactor healthFactor;
+        LendingEngine lendingEngine;
+        BorrowingEngine borrowingEngine;
+        WithdrawEngine withdrawEngine;
+        InterestRateEngine interestRateEngine;
+        LiquidationEngine liquidationEngine;
+        HelperConfig helperConfig;
+    }
+
+    function run() external {
+        deployProtocol();
+    }
+
+    function deployProtocol() public returns (Contracts memory) {
         // Create new instance of HelperConfig to get network-specific addresses
         // This will either return mock addresses for local testing or real addresses for testnet
         HelperConfig config = new HelperConfig();
@@ -51,14 +54,8 @@ contract DeployProtocol is Script {
         ) = config.activeNetworkConfig();
 
         // Set up our arrays with the token addresses and their corresponding price feeds
-        // Set up arrays
-        tokenAddresses[0] = weth;
-        tokenAddresses[1] = wbtc;
-        tokenAddresses[2] = link;
-
-        priceFeedAddresses[0] = wethUsdPriceFeed;
-        priceFeedAddresses[1] = wbtcUsdPriceFeed;
-        priceFeedAddresses[2] = linkUsdPriceFeed;
+        tokenAddresses = [weth, wbtc, link];
+        priceFeedAddresses = [wethUsdPriceFeed, wbtcUsdPriceFeed, linkUsdPriceFeed];
 
         // Start broadcasting our transactions
         vm.startBroadcast(deployerKey);
@@ -74,15 +71,15 @@ contract DeployProtocol is Script {
 
         vm.stopBroadcast();
 
-        return (
-            coreStorage,
-            healthFactor,
-            lendingEngine,
-            borrowingEngine,
-            withdrawEngine,
-            interestRateEngine,
-            liquidationEngine,
-            config
-        );
+        return Contracts({
+            coreStorage: coreStorage,
+            healthFactor: healthFactor,
+            lendingEngine: lendingEngine,
+            borrowingEngine: borrowingEngine,
+            withdrawEngine: withdrawEngine,
+            interestRateEngine: interestRateEngine,
+            liquidationEngine: liquidationEngine,
+            helperConfig: config
+        });
     }
 }
