@@ -3,10 +3,11 @@ pragma solidity ^0.8.20;
 
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import { OracleLib } from "./libraries/OracleLib.sol";
+import { HealthFactor } from "./HealthFactor.sol";
+import { IStorage } from "./interfaces/IStorage.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract CoreStorage is ReentrancyGuard {
+contract CoreStorage is IStorage, ReentrancyGuard {
     ///////////////////////////////
     //           Errors          //
     ///////////////////////////////
@@ -15,7 +16,6 @@ contract CoreStorage is ReentrancyGuard {
     error LendingEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error LendingEngine__TokenNotAllowed(address token);
     error LendingEngine__TransferFailed();
-    error LendingEngine__BreaksHealthFactor(uint256);
     error BorrowingEngine__TransferFailed();
     error BorrowingEngine__OverpaidDebt();
     error BorrowingEngine__ZeroAddressNotAllowed();
@@ -32,15 +32,13 @@ contract CoreStorage is ReentrancyGuard {
     mapping(address account => uint256 amount) private s_balances;
 
     // Track borrowed amounts per user per token
-    mapping(address user => mapping(address token => uint256 amount)) private s_TokenAmountsBorrowed;
+    mapping(address user => mapping(address token => uint256 amount)) internal s_TokenAmountsBorrowed;
 
     // maps token address to pricefeed addresses
     mapping(address token => address priceFeed) private s_priceFeeds;
 
-    ///////////////////
-    //     Type     //
-    //////////////////
-    using OracleLib for AggregatorV3Interface;
+    // an array of all the collateral & Borrowing tokens users can use.
+    address[] internal s_AllowedTokens;
 
     ///////////////////////////////
     //      State Variables      //
@@ -60,8 +58,7 @@ contract CoreStorage is ReentrancyGuard {
 
     uint256 private constant LIQUIDATION_BONUS = 10;
 
-    // an array of all the collateral & Borrowing tokens users can use.
-    address[] private s_AllowedTokens;
+    HealthFactor internal i_healthFactor;
 
     ///////////////////////////////
     //           Events          //
@@ -74,11 +71,16 @@ contract CoreStorage is ReentrancyGuard {
     // `indexed` parameters allow efficient filtering/searching of logs
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
 
-    event UserBorrowed(address indexed user, address indexed token, uint256 indexed amount);
-
     event BorrowedAmountRepaid(
         address indexed payer, address indexed onBehalfOf, address indexed token, uint256 amount
     );
+
+    event UserBorrowed(address indexed user, address indexed token, uint256 indexed amount);
+
+    ///////////////////
+    //     Type     //
+    //////////////////
+    using OracleLib for AggregatorV3Interface;
 
     ///////////////////////////////
     //         Modifiers         //
@@ -86,20 +88,22 @@ contract CoreStorage is ReentrancyGuard {
 
     // modifier to make sure that the amount being passes as the input is more than 0 or the function being called will
     // revert.
-    function moreThanZero(uint256 amount) external {
+    modifier moreThanZero(uint256 amount) {
         if (amount == 0) {
             revert LendingEngine__NeedsMoreThanZero();
         }
+        _;
     }
 
     // Modifier that checks if a token is in our list of allowed collateral tokens
     // If a token has no price feed address (equals address(0)) in our s_priceFeeds mapping,
     // it means it's not an allowed token and the transaction will revert
     // The underscore (_) means "continue with the function code if check passes"
-    function isAllowedToken(address token) external {
-        if (getPriceFeeds()[token] == address(0)) {
+    modifier isAllowedToken(address token) {
+        if (s_priceFeeds[token] == address(0)) {
             revert LendingEngine__TokenNotAllowed(token);
         }
+        _;
     }
 
     ///////////////////////////////
@@ -120,92 +124,20 @@ contract CoreStorage is ReentrancyGuard {
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             // and we set each tokenAddress equal to their respective priceFeedAddresses in the mapping.
             // we declare this in the constructor and define the variables in the deployment script
-            getPriceFeeds()[tokenAddresses[i]] = priceFeedAddresses[i];
+            s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
             // push all the tokens into our tokens array/list
             s_AllowedTokens.push(tokenAddresses[i]);
         }
+        i_healthFactor = new HealthFactor(tokenAddresses, priceFeedAddresses, address(this));
     }
 
-    ///////////////////////////////////////
-    //         Lending Functions         //
-    //////////////////////////////////////
-
-    function updateCollateralDeposited(address user, address tokenDeposited, uint256 amount) external {
-        s_collateralDeposited[user][tokenDeposited] += amount;
-    }
-
-    /////////////////////////////////////
-    //        Borrow Functions         //
-    ////////////////////////////////////
-
-    function getAmountOfTokenBorrowed(address user, address token) public view returns (uint256) {
-        return s_TokenAmountsBorrowed[user][token];
-    }
-
-    function increaseAmountOfTokenBorrowed(address user, address token, uint256 amount) external {
-        s_TokenAmountsBorrowed[user][token] += amount;
-    }
-
-    function decreaseAmountOfTokenBorrowed(address user, address token, uint256 amount) external {
-        s_TokenAmountsBorrowed[user][token] -= amount;
-    }
-
-    function getTotalCollateralOfToken(address token) private view returns (uint256 totalCollateral) {
-        // loop through the allowed collateral tokens
-        for (uint256 i = 0; i < s_AllowedTokens.length; i++) {
-            // if the token inputted by the caller is in the loop, then
-            if (s_AllowedTokens[i] == token) {
-                // Get actual token balance of contract
-                totalCollateral = IERC20(token).balanceOf(address(this));
-                // exit loop immediately
-                break;
-            }
-        }
-        // return the total amount of collateral of these tokens
-        return totalCollateral;
-    }
-
-    function getAvailableToBorrow(address token) external view returns (uint256) {
-        // Get total amount of this token deposited as collateral
-        uint256 totalCollateral = getTotalCollateralOfToken(token);
-
-        // Get total amount already borrowed of this token
-        uint256 totalBorrowed = getTotalBorrowedOfToken(token);
-
-        // Available = Total Collateral - Total Borrowed
-        return totalCollateral - totalBorrowed;
-    }
-
-    function getTotalBorrowedOfToken(address token) private view returns (uint256 totalBorrowed) {
-        // loop through the allowed collateral tokens
-        for (uint256 i = 0; i < s_AllowedTokens.length; i++) {
-            // if the token inputted by the caller is in the loop, then
-            if (s_AllowedTokens[i] == token) {
-                // Sum up all borrowed amounts of this token across users
-                for (uint256 j = 0; j < s_AllowedTokens.length; j++) {
-                    totalBorrowed += getAmountOfTokenBorrowed(msg.sender, token);
-                }
-                // exit loop immediately
-                break;
-            }
-        }
-        // return the total amount borrowed of these tokens
-        return totalBorrowed;
-    }
-
-    //////////////////////////////////////////
-    //         Liquidation Functions         //
-    //////////////////////////////////////////
-
-    /////////////////////////////////////
-    //         Helper Functions         //
-    /////////////////////////////////////
     function getUsdValue(
         address token,
         uint256 amount // in WEI
     )
-        public
+        external
         view
+        override
         returns (uint256)
     {
         return _getUsdValue(token, amount);
@@ -225,16 +157,21 @@ contract CoreStorage is ReentrancyGuard {
         return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
     }
 
-    function getMinimumHealthFactor() external pure returns (uint256) {
+    /////////////////////////////////////
+    //         Helper Functions         //
+    /////////////////////////////////////
+
+    function getMinimumHealthFactor() external pure override returns (uint256) {
+        // Returns minimum health factor before liquidation (1e18 = 1)
         return MIN_HEALTH_FACTOR;
     }
 
-    function getPrecision() external pure returns (uint256) {
+    function getPrecision() public pure override returns (uint256) {
         // Returns the precision scalar used for calculations (1e18)
         return PRECISION;
     }
 
-    function getAdditionalFeedPrecision() external pure returns (uint256) {
+    function getAdditionalFeedPrecision() private pure returns (uint256) {
         // Returns additional precision scalar for price feeds (1e10)
         return ADDITIONAL_FEED_PRECISION;
     }
@@ -244,19 +181,14 @@ contract CoreStorage is ReentrancyGuard {
         return LIQUIDATION_THRESHOLD;
     }
 
-    function getLiquidationBonus() external pure returns (uint256) {
+    function getLiquidationBonus() external pure override returns (uint256) {
         // Returns bonus percentage liquidators get when liquidating (10 = 10% bonus)
         return LIQUIDATION_BONUS;
     }
 
-    function getLiquidationPrecision() external pure returns (uint256) {
+    function getLiquidationPrecision() external pure override returns (uint256) {
         // Returns precision scalar for liquidation calculations (100)
         return LIQUIDATION_PRECISION;
-    }
-
-    function getMinHealthFactor() external pure returns (uint256) {
-        // Returns minimum health factor before liquidation (1e18 = 1)
-        return MIN_HEALTH_FACTOR;
     }
 
     // Returns the array of all allowed collateral token addresses
@@ -264,7 +196,12 @@ contract CoreStorage is ReentrancyGuard {
     // 1. UI interfaces to know which tokens can be used as collateral
     // 2. Other contracts that need to interact with the system
     // 3. Checking which tokens are supported without accessing state variables directly
-    function getAllowedTokens() external view returns (address[] memory) {
+    function getAllowedTokens() external view override returns (address[] memory) {
+        // Returns array of all accepted collateral token addresses
+        return s_AllowedTokens;
+    }
+
+    function _getAllowedTokens() internal view returns (address[] memory) {
         // Returns array of all accepted collateral token addresses
         return s_AllowedTokens;
     }
@@ -279,16 +216,32 @@ contract CoreStorage is ReentrancyGuard {
         return s_priceFeeds[token];
     }
 
-    function getPriceFeeds() internal view returns (mapping(address => address) storage) {
-        return s_priceFeeds;
-    }
-
     function balanceOf(address account) private view returns (uint256) {
         return s_balances[account];
     }
 
-    function getCollateralBalanceOfUser(address user, address token) external view returns (uint256) {
+    function getCollateralBalanceOfUser(address user, address token) external view override returns (uint256) {
         // Returns how much of a specific token a user has deposited as collateral
         return s_collateralDeposited[user][token];
+    }
+
+    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) external view returns (uint256) {
+        // Get the price feed for this token from our mapping
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+
+        // Get the latest price from Chainlink
+        // We only care about the price, so we ignore other returned values using commas
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
+
+        // Calculate how many tokens the USD amount can buy:
+        // 1. Multiply usdAmount by PRECISION (1e18) for precision
+        // 2. Divide by price (converted to uint) multiplied by ADDITIONAL_FEED_PRECISION (1e10)
+        // Example: If price of ETH = $2000:
+        // - To get 1 ETH worth: ($1000 * 1e18) / (2000 * 1e10) = 0.5 ETH
+        return (usdAmountInWei * getPrecision()) / (uint256(price) * getAdditionalFeedPrecision());
+    }
+
+    function updateCollateralDeposited(address user, address tokenDeposited, uint256 amount) internal {
+        s_collateralDeposited[user][tokenDeposited] += amount;
     }
 }
