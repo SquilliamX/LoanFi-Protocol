@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Errors } from "./Errors.sol";
-import { ILendingPool } from "./interfaces/ILendingPool.sol";
+import { IStorage } from "./interfaces/IStorage.sol";
 
-contract HealthFactor is Errors {
-    ILendingPool private immutable i_lendingPool;
+contract HealthFactor {
+    error HealthFactor__BreaksHealthFactor(uint256);
 
-    constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses, address lendingPoolAddress) {
-        i_lendingPool = ILendingPool(lendingPoolAddress);
+    IStorage private immutable i_storage;
+
+    constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses, address coreStorageAddress) {
+        i_storage = IStorage(coreStorageAddress);
     }
 
     function calculateHealthFactor(
@@ -27,20 +28,20 @@ contract HealthFactor is Errors {
         // i = 0: Start with the first token in the array
         // i < length: Continue until we've checked every token
         // i++: Move to next token after each iteration
-        for (uint256 i = 0; i < i_lendingPool.getAllowedTokens().length; i++) {
+        for (uint256 i = 0; i < i_storage.getAllowedTokens().length; i++) {
             // Get the token address at the current index (i) from our array of collateral tokens
             // Example: If i = 0, might get WETH address
             // Example: If i = 1, might get WBTC address
-            address token = i_lendingPool.getAllowedTokens()[i];
+            address token = i_storage.getAllowedTokens()[i];
 
             // Get how much of this specific token the user has deposited as collateral
             // Example: If user has deposited 5 WETH, amount = 5
             // Example: If user has deposited 2 WBTC, amount = 2
-            uint256 amount = i_lendingPool.getCollateralBalanceOfUser(user, token);
+            uint256 amount = i_storage.getCollateralBalanceOfUser(user, token);
 
             // After getting the token and the amount of tokens the user has, gets the correct amount of collateral the
             // user has deposited and saves it as a variable named totalCollateralValueInUsd
-            totalCollateralValueInUsd += i_lendingPool.getUsdValue(token, amount);
+            totalCollateralValueInUsd += i_storage.getUsdValue(token, amount);
         }
 
         // return the total amount of collateral in USD
@@ -52,20 +53,20 @@ contract HealthFactor is Errors {
         // i = 0: Start with the first token in the array
         // i < length: Continue until we've checked every token
         // i++: Move to next token after each iteration
-        for (uint256 i = 0; i < i_lendingPool.getAllowedTokens().length; i++) {
+        for (uint256 i = 0; i < i_storage.getAllowedTokens().length; i++) {
             // Get the token address at the current index (i) from our array of collateral tokens
             // Example: If i = 0, might get WETH address
             // Example: If i = 1, might get WBTC address
-            address token = i_lendingPool.getAllowedTokens()[i];
+            address token = i_storage.getAllowedTokens()[i];
 
             // Get how much of this specific token the user has deposited as collateral
             // Example: If user has deposited 5 WETH, amount = 5
             // Example: If user has deposited 2 WBTC, amount = 2
-            uint256 amount = i_lendingPool.getCollateralBalanceOfUser(user, token);
+            uint256 amount = i_storage.getCollateralBalanceOfUser(user, token);
 
             // After getting the token and the amount of tokens the user has, gets the correct amount of collateral the
             // user has deposited and saves it as a variable named totalBorrowedValueInUsd
-            totalBorrowedValueInUsd += i_lendingPool.getUsdValue(token, amount);
+            totalBorrowedValueInUsd += i_storage.getUsdValue(token, amount);
         }
 
         // return the total amount of collateral in USD
@@ -99,7 +100,7 @@ contract HealthFactor is Errors {
         // grabs the user's health factor by calling _healthFactor
         uint256 userHealthFactor = _healthFactor(user);
         // if it is less than 1, revert.
-        if (userHealthFactor < i_lendingPool.getMinimumHealthFactor()) {
+        if (userHealthFactor < i_storage.getMinimumHealthFactor()) {
             revert HealthFactor__BreaksHealthFactor(userHealthFactor);
         }
     }
@@ -128,11 +129,11 @@ contract HealthFactor is Errors {
         // Adjust collateral value by liquidation threshold
         // Example: $1000 ETH * 50/100 = $500 adjusted collateral
         uint256 collateralAdjustedForThreshold =
-            (collateralValueInUsd * i_lendingPool.getLiquidationBonus()) / i_lendingPool.getLiquidationPrecision();
+            (collateralValueInUsd * i_storage.getLiquidationBonus()) / i_storage.getLiquidationPrecision();
 
         // Calculate health factor: (adjusted collateral * PRECISION) / debt
         // Example: ($500 * 1e18) / $100 = 5e18 (health factor of 5)
-        return (collateralAdjustedForThreshold * i_lendingPool.getPrecision()) / totalAmountBorrowed;
+        return (collateralAdjustedForThreshold * i_storage.getPrecision()) / totalAmountBorrowed;
     }
 
     // Returns the current health factor for a specific user
