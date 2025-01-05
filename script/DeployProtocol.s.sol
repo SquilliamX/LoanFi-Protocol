@@ -3,19 +3,21 @@ pragma solidity ^0.8.20;
 
 import { Script } from "forge-std/Script.sol";
 import { HelperConfig } from "./HelperConfig.s.sol";
-import { Errors } from "src/Errors.sol";
+import { CoreStorage } from "src/CoreStorage.sol";
 import { HealthFactor } from "src/HealthFactor.sol";
 import { InterestRateEngine } from "src/InterestRateEngine.sol";
 import { LendingPool } from "src/LendingPool.sol";
 import { LiquidationEngine } from "src/LiquidationEngine.sol";
 import { WithdrawEngine } from "src/WithdrawEngine.sol";
+import { BorrowingEngine } from "src/BorrowingEngine.sol";
 
 contract DeployProtocol is Script {
     // struct that holds all of the protocol's contracts
     struct Contracts {
-        Errors errors;
-        HealthFactor healthFactor;
+        CoreStorage coreStorage;
         LendingPool lendingPool;
+        BorrowingEngine borrowingEngine;
+        HealthFactor healthFactor;
         WithdrawEngine withdrawEngine;
         InterestRateEngine interestRateEngine;
         LiquidationEngine liquidationEngine;
@@ -89,13 +91,21 @@ contract DeployProtocol is Script {
      */
     function deployEngines() private {
         vm.startBroadcast(s_deployerKey);
-        s_contracts.errors = new Errors();
-        s_contracts.lendingPool = new LendingPool(tokenAddresses, priceFeedAddresses);
+
+        // First deploy CoreStorage since HealthFactor needs its address
+        s_contracts.coreStorage = new CoreStorage(tokenAddresses, priceFeedAddresses);
+
+        // Now deploy HealthFactor with CoreStorage's address
         s_contracts.healthFactor =
-            new HealthFactor(tokenAddresses, priceFeedAddresses, address(s_contracts.lendingPool));
+            new HealthFactor(tokenAddresses, priceFeedAddresses, address(s_contracts.coreStorage));
+
+        // Deploy remaining contracts
+        s_contracts.lendingPool = new LendingPool(tokenAddresses, priceFeedAddresses);
+        s_contracts.borrowingEngine = new BorrowingEngine(tokenAddresses, priceFeedAddresses);
         s_contracts.withdrawEngine = new WithdrawEngine(tokenAddresses, priceFeedAddresses);
         s_contracts.liquidationEngine = new LiquidationEngine(tokenAddresses, priceFeedAddresses);
         s_contracts.interestRateEngine = new InterestRateEngine(tokenAddresses, priceFeedAddresses);
+
         vm.stopBroadcast();
     }
 }
