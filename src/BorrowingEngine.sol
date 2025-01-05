@@ -1,21 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import { LendingPool } from "src/LendingPool.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { CoreStorage } from "./CoreStorage.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { HealthFactor } from "src/HealthFactor.sol";
 
-contract BorrowingEngine is ReentrancyGuard {
-    CoreStorage private immutable i_coreStorage;
-
-    ///////////////////////////////
-    //         Functions         //
-    ///////////////////////////////
-
-    constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses, address coreStorageAddress) {
-        i_coreStorage = CoreStorage(coreStorageAddress);
-    }
+contract BorrowingEngine is LendingPool {
+    constructor(
+        address[] memory tokenAddresses,
+        address[] memory priceFeedAddresses
+    )
+        LendingPool(tokenAddresses, priceFeedAddresses)
+    { }
 
     function borrowFunds(address tokenToBorrow, uint256 amountToBorrow) public nonReentrant {
         _borrowFunds(tokenToBorrow, amountToBorrow);
@@ -32,36 +27,35 @@ contract BorrowingEngine is ReentrancyGuard {
         _paybackBorrowedAmount(tokenToPayBack, amountToPayBack, onBehalfOf);
     }
 
-    ///////////////////////////////////////
-    //         Private Functions         //
-    //////////////////////////////////////
-
-    function _borrowFunds(address tokenToBorrow, uint256 amountToBorrow) private nonReentrant {
-        i_coreStorage.moreThanZero(amountToBorrow);
-        i_coreStorage.isAllowedToken(tokenToBorrow);
+    function _borrowFunds(
+        address tokenToBorrow,
+        uint256 amountToBorrow
+    )
+        private
+        moreThanZero(amountToBorrow)
+        isAllowedToken(tokenToBorrow)
+        nonReentrant
+    {
         // get the amount available to borrow
-        uint256 availableToBorrow = i_coreStorage.getAvailableToBorrow(tokenToBorrow);
+        uint256 availableToBorrow = getAvailableToBorrow(tokenToBorrow);
         // if user is trying to borrow more than available, revert
         if (amountToBorrow > availableToBorrow) {
-            revert CoreStorage.LendingEngine__NotEnoughAvailableTokens();
+            revert LendingEngine__NotEnoughAvailableTokens();
         }
 
-        // Get USD value of borrow amount
-        uint256 borrowAmountInUsd = i_coreStorage.getUsdValue(tokenToBorrow, amountToBorrow);
-
         // Track the specific token amounts & USD amounts borrowed
-        i_coreStorage._increaseAmountOfTokenBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
+        increaseAmountOfTokenBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
 
         // This will check if total borrowed exceeds collateral limits
-        i_coreStorage.revertIfHealthFactorIsBroken(msg.sender);
+        i_healthFactor.revertIfHealthFactorIsBroken(msg.sender);
 
         // attempt to send borrowed amount to the msg.sender
         bool success = IERC20(tokenToBorrow).transfer(msg.sender, amountToBorrow);
         if (!success) {
-            revert i_coreStorage.BorrowingEngine__TransferFailed();
+            revert BorrowingEngine__TransferFailed();
         }
         // emit event when msg.sender borrows funds
-        emit i_coreStorage.UserBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
+        emit UserBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
     }
 
     function _paybackBorrowedAmount(
@@ -70,28 +64,28 @@ contract BorrowingEngine is ReentrancyGuard {
         address onBehalfOf
     )
         private
+        moreThanZero(amountToPayBack)
+        isAllowedToken(tokenToPayBack)
         nonReentrant
     {
-        i_coreStorage.moreThanZero(amountToPayBack);
-        i_coreStorage.isAllowedToken(tokenToPayBack);
         // if the address being paid on behalf of is the 0 address, revert
         if (onBehalfOf == address(0)) {
-            revert CoreStorage.BorrowingEngine__ZeroAddressNotAllowed();
+            revert BorrowingEngine__ZeroAddressNotAllowed();
         }
 
         // Safety check to prevent users from overpaying their debt
-        uint256 borrowedAmount = i_coreStorage.getAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack);
+        uint256 borrowedAmount = getAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack);
         if (borrowedAmount < amountToPayBack) {
-            revert CoreStorage.BorrowingEngine__OverpaidDebt();
+            revert BorrowingEngine__OverpaidDebt();
         }
 
         // Update state BEFORE external calls (CEI pattern)
         // Decrease the user's borrowed balance in our internal accounting
         // This must happen first to prevent reentrancy attacks
-        i_coreStorage._decreaseAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack, amountToPayBack);
+        decreaseAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack, amountToPayBack);
 
         // Check health factor after repayment
-        i_coreStorage.revertIfHealthFactorIsBroken(onBehalfOf);
+        i_healthFactor.revertIfHealthFactorIsBroken(onBehalfOf);
 
         // Transfer tokens from user to contract
         bool success = IERC20(tokenToPayBack).transferFrom(msg.sender, address(this), amountToPayBack);
@@ -99,9 +93,64 @@ contract BorrowingEngine is ReentrancyGuard {
         // Check if transfer was successful
         // This is a backup check since transferFrom would normally revert on failure
         if (!success) {
-            revert CoreStorage.BorrowingEngine__TransferFailed();
+            revert BorrowingEngine__TransferFailed();
         }
         // emit event
-        emit CoreStorage.BorrowedAmountRepaid(msg.sender, onBehalfOf, tokenToPayBack, amountToPayBack);
+        emit BorrowedAmountRepaid(msg.sender, onBehalfOf, tokenToPayBack, amountToPayBack);
+    }
+
+    function increaseAmountOfTokenBorrowed(address user, address token, uint256 amount) private {
+        s_TokenAmountsBorrowed[user][token] += amount;
+    }
+
+    function decreaseAmountOfTokenBorrowed(address user, address token, uint256 amount) private {
+        s_TokenAmountsBorrowed[user][token] -= amount;
+    }
+
+    function getTotalCollateralOfToken(address token) private view returns (uint256 totalCollateral) {
+        // loop through the allowed collateral tokens
+        for (uint256 i = 0; i < _getAllowedTokens().length; i++) {
+            // if the token inputted by the caller is in the loop, then
+            if (_getAllowedTokens()[i] == token) {
+                // Get actual token balance of contract
+                totalCollateral = IERC20(token).balanceOf(address(this));
+                // exit loop immediately
+                break;
+            }
+        }
+        // return the total amount of collateral of these tokens
+        return totalCollateral;
+    }
+
+    function getAvailableToBorrow(address token) private view returns (uint256) {
+        // Get total amount of this token deposited as collateral
+        uint256 totalCollateral = getTotalCollateralOfToken(token);
+
+        // Get total amount already borrowed of this token
+        uint256 totalBorrowed = getTotalBorrowedOfToken(token);
+
+        // Available = Total Collateral - Total Borrowed
+        return totalCollateral - totalBorrowed;
+    }
+
+    function getTotalBorrowedOfToken(address token) private view returns (uint256 totalBorrowed) {
+        // loop through the allowed collateral tokens
+        for (uint256 i = 0; i < _getAllowedTokens().length; i++) {
+            // if the token inputted by the caller is in the loop, then
+            if (_getAllowedTokens()[i] == token) {
+                // Sum up all borrowed amounts of this token across users
+                for (uint256 j = 0; j < _getAllowedTokens().length; j++) {
+                    totalBorrowed += getAmountOfTokenBorrowed(msg.sender, token);
+                }
+                // exit loop immediately
+                break;
+            }
+        }
+        // return the total amount borrowed of these tokens
+        return totalBorrowed;
+    }
+
+    function getAmountOfTokenBorrowed(address user, address token) private view returns (uint256) {
+        return s_TokenAmountsBorrowed[user][token];
     }
 }
