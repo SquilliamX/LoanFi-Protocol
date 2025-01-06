@@ -137,7 +137,7 @@ contract HealthFactor is CoreStorage {
 
         // Calculate health factor: (adjusted collateral * PRECISION) / debt
         // Example: ($500 * 1e18) / $100 = 5e18 (health factor of 5)
-        return (collateralAdjustedForThreshold * getPrecision()) / totalAmountBorrowed;
+        return (collateralAdjustedForThreshold * _getPrecision()) / totalAmountBorrowed;
     }
 
     // Returns the current health factor for a specific user
