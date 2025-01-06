@@ -16,7 +16,7 @@ contract HealthFactor is CoreStorage {
         uint256 totalAmountBorrowed,
         uint256 collateralValueInUsd
     )
-        public
+        external
         pure
         returns (uint256)
     {
