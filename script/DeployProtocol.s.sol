@@ -5,22 +5,20 @@ import { Script } from "forge-std/Script.sol";
 import { HelperConfig } from "./HelperConfig.s.sol";
 import { CoreStorage } from "src/CoreStorage.sol";
 import { HealthFactor } from "src/HealthFactor.sol";
-import { InterestRateEngine } from "src/InterestRateEngine.sol";
-import { LendingPool } from "src/LendingPool.sol";
-import { LiquidationEngine } from "src/LiquidationEngine.sol";
-import { WithdrawEngine } from "src/WithdrawEngine.sol";
-import { BorrowingEngine } from "src/BorrowingEngine.sol";
+import { InterestRate } from "src/InterestRate.sol";
+import { Lending } from "src/Lending.sol";
+import { Liquidations } from "src/Liquidations.sol";
+import { Withdraw } from "src/Withdraw.sol";
+import { Borrowing } from "src/Borrowing.sol";
 
 contract DeployProtocol is Script {
     // struct that holds all of the protocol's contracts
+    // Only deploy the final contracts in the inheritance chain
     struct Contracts {
-        CoreStorage coreStorage;
-        LendingPool lendingPool;
-        BorrowingEngine borrowingEngine;
-        HealthFactor healthFactor;
-        WithdrawEngine withdrawEngine;
-        InterestRateEngine interestRateEngine;
-        LiquidationEngine liquidationEngine;
+        Borrowing borrowing;
+        Withdraw withdraw;
+        InterestRate interestRate;
+        Liquidations liquidations;
         HelperConfig helperConfig;
     }
 
@@ -39,19 +37,19 @@ contract DeployProtocol is Script {
     }
 
     /*
-    * @dev runs deployTokenConfig & deployEngines
+    * @dev runs deployTokenConfig & deployContracts
     * @dev returns the Contracts struct for integration tests
     */
     function deployProtocol() public returns (Contracts memory) {
         deployTokenConfig();
-        deployEngines();
+        deployContracts();
         return s_contracts;
     }
 
     /*
      * @notice Configures token and price feed addresses for the protocol deployment
      * @dev Initializes HelperConfig and sets up token addresses and their corresponding price feeds
-     * @dev This function must be called before deployEngines() as it sets up required configuration
+     * @dev This function must be called before deployContracts() as it sets up required configuration
      * @dev The arrays tokenAddresses and priceFeedAddresses are used by all protocol contracts
      */
     function deployTokenConfig() private {
@@ -89,23 +87,12 @@ contract DeployProtocol is Script {
      * @dev Must be called after deployTokenConfig() as it relies on tokenAddresses and priceFeedAddresses being set
      * @dev Uses vm.startBroadcast/stopBroadcast with the deployerKey depending on the chain deployed on
      */
-    function deployEngines() private {
+    function deployContracts() private {
         vm.startBroadcast(s_deployerKey);
-
-        // First deploy CoreStorage since HealthFactor needs its address
-        s_contracts.coreStorage = new CoreStorage(tokenAddresses, priceFeedAddresses);
-
-        // Now deploy HealthFactor with CoreStorage's address
-        s_contracts.healthFactor =
-            new HealthFactor(tokenAddresses, priceFeedAddresses, address(s_contracts.coreStorage));
-
-        // Deploy remaining contracts
-        s_contracts.lendingPool = new LendingPool(tokenAddresses, priceFeedAddresses);
-        s_contracts.borrowingEngine = new BorrowingEngine(tokenAddresses, priceFeedAddresses);
-        s_contracts.withdrawEngine = new WithdrawEngine(tokenAddresses, priceFeedAddresses);
-        s_contracts.liquidationEngine = new LiquidationEngine(tokenAddresses, priceFeedAddresses);
-        s_contracts.interestRateEngine = new InterestRateEngine(tokenAddresses, priceFeedAddresses);
-
+        s_contracts.borrowing = new Borrowing(tokenAddresses, priceFeedAddresses);
+        s_contracts.withdraw = new Withdraw(tokenAddresses, priceFeedAddresses);
+        s_contracts.liquidations = new Liquidations(tokenAddresses, priceFeedAddresses);
+        s_contracts.interestRate = new InterestRate(tokenAddresses, priceFeedAddresses);
         vm.stopBroadcast();
     }
 }
