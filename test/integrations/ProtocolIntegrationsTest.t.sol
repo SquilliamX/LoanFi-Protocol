@@ -2,12 +2,10 @@
 pragma solidity ^0.8.20;
 
 import { Test } from "forge-std/Test.sol";
-import { BorrowingEngine } from "src/BorrowingEngine.sol";
 import { HealthFactor } from "src/HealthFactor.sol";
 import { CoreStorage } from "src/CoreStorage.sol";
-import { Inheritance } from "src/Inheritance.sol";
 import { InterestRateEngine } from "src/InterestRateEngine.sol";
-import { LendingEngine } from "src/LendingEngine.sol";
+import { LendingPool } from "src/LendingPool.sol";
 import { LiquidationEngine } from "src/LiquidationEngine.sol";
 import { WithdrawEngine } from "src/WithdrawEngine.sol";
 import { HelperConfig } from "script/HelperConfig.s.sol";
@@ -34,6 +32,10 @@ contract LendingIntegrationsTest is Test {
     address public user = makeAddr("user"); // Address of the USER
 
     uint256 public constant STARTING_USER_BALANCE = 10 ether; // Initial balance given to test users
+
+    // Arrays for token setup
+    address[] public tokenAddresses; // Array to store allowed collateral token addresses
+    address[] public feedAddresses; // Array to store corresponding price feed addresses
 
     function setUp() external {
         // Create a new instance of the deployment script
@@ -67,16 +69,83 @@ contract LendingIntegrationsTest is Test {
         ERC20Mock(link).mint(user, STARTING_USER_BALANCE);
     }
 
+    //////////////////////////
+    //  CoreStorage Tests  //
+    /////////////////////////
+
+    /**
+     * @notice Tests that the constructor reverts when token and price feed arrays have different lengths
+     * @dev This ensures proper initialization of collateral tokens and their price feeds
+     * Test sequence:
+     * 1. Push WETH to token array
+     * 2. Push ETH/USD and BTC/USD to price feed array
+     * 3. Attempt to deploy CoreStorage with mismatched arrays
+     * 4. Verify it reverts with correct error
+     */
+    function testRevertsIfTokenLengthDoesntMatchPriceFeeds() public {
+        // Setup: Create mismatched arrays
+        tokenAddresses.push(weth); // Add only two tokens
+        tokenAddresses.push(wbtc);
+
+        feedAddresses.push(wethUsdPriceFeed); // Add three price feeds
+        feedAddresses.push(btcUsdPriceFeed); // Creating a length mismatch
+        feedAddresses.push(linkUsdPriceFeed);
+
+        // Expect revert when arrays don't match in length
+        vm.expectRevert(CoreStorage.CoreStorage__TokenAddressesAndPriceFeedAddressesMustBeSameLength.selector);
+        new CoreStorage(tokenAddresses, feedAddresses);
+    }
+
+    ///////////////////////////
+    //  HealthFactor Tests  //
+    //////////////////////////
+
+    ///////////////////////////
+    //  LendingEngine Tests  //
+    //////////////////////////
+
     function testDepositWorks() public {
         // Start impersonating our test user
         vm.startPrank(user);
-        // Approve DSCEngine to spend user's WETH
-        ERC20Mock(weth).approve(address(contracts.lendingEngine), DEPOSIT_AMOUNT);
+        // Approve LendingEngine to spend user's WETH
+        ERC20Mock(weth).approve(address(contracts.borrowingEngine), DEPOSIT_AMOUNT);
 
         // Deposit the collateral
-        contracts.lendingEngine.depositCollateral(address(weth), DEPOSIT_AMOUNT);
+        contracts.borrowingEngine.depositCollateral(address(weth), DEPOSIT_AMOUNT);
         vm.stopPrank();
         uint256 expectedDepositedAmount = 5 ether;
-        assertEq(contracts.coreStorage.balanceOf(user), expectedDepositedAmount);
+        assertEq(contracts.borrowingEngine.getCollateralBalanceOfUser(user, weth), expectedDepositedAmount);
     }
+
+    function testDepositRevertsWhenDepositingZero() public {
+        // Start impersonating our test user
+        vm.startPrank(user);
+        // Approve LendingEngine to spend user's WETH
+        ERC20Mock(weth).approve(address(contracts.borrowingEngine), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(CoreStorage.LendingEngine__NeedsMoreThanZero.selector);
+        // Deposit the collateral
+        contracts.borrowingEngine.depositCollateral(address(weth), 0);
+        vm.stopPrank();
+    }
+
+    function testDepositRevertsWithUnapprovedCollateral() public {
+        // Create a new random ERC20 token
+        ERC20Mock dogToken = new ERC20Mock("DOG", "DOG", user, 100e18);
+
+        // Start impersonating our test user
+        vm.startPrank(user);
+
+        // Expect revert with TokenNotAllowed error when trying to deposit unapproved token
+        vm.expectRevert(abi.encodeWithSelector(CoreStorage.LendingEngine__TokenNotAllowed.selector, address(dogToken)));
+        // Attempt to deposit unapproved token as collateral (this should fail)
+        contracts.borrowingEngine.depositCollateral(address(dogToken), DEPOSIT_AMOUNT);
+
+        // Stop impersonating the user
+        vm.stopPrank();
+    }
+
+    /////////////////////////////
+    //  BorrowingEngine Tests  //
+    ////////////////////////////
 }
