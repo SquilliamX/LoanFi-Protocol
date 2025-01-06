@@ -4,21 +4,9 @@ pragma solidity ^0.8.20;
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import { OracleLib } from "./libraries/OracleLib.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { Errors } from "src/libraries/Errors.sol";
 
 contract CoreStorage is ReentrancyGuard {
-    ///////////////////////////////
-    //           Errors          //
-    ///////////////////////////////
-    error LendingEngine__NeedsMoreThanZero();
-    error LendingEngine__YouNeedMoreFunds();
-    error CoreStorage__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
-    error LendingEngine__TokenNotAllowed(address token);
-    error LendingEngine__TransferFailed();
-    error BorrowingEngine__TransferFailed();
-    error BorrowingEngine__OverpaidDebt();
-    error BorrowingEngine__ZeroAddressNotAllowed();
-    error LendingEngine__NotEnoughAvailableTokens();
-
     // Tracks how much collateral of each specific token a user has deposited
     // First key: user's address
     // Second key: token address they deposited
@@ -86,7 +74,7 @@ contract CoreStorage is ReentrancyGuard {
     // revert.
     modifier moreThanZero(uint256 amount) {
         if (amount == 0) {
-            revert LendingEngine__NeedsMoreThanZero();
+            revert Errors.Lending__NeedsMoreThanZero();
         }
         _;
     }
@@ -97,7 +85,7 @@ contract CoreStorage is ReentrancyGuard {
     // The underscore (_) means "continue with the function code if check passes"
     modifier isAllowedToken(address token) {
         if (s_priceFeeds[token] == address(0)) {
-            revert LendingEngine__TokenNotAllowed(token);
+            revert Errors.Lending__TokenNotAllowed(token);
         }
         _;
     }
@@ -114,7 +102,7 @@ contract CoreStorage is ReentrancyGuard {
     constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses) {
         // if the amount of tokenAddresses is different from the amount of priceFeedAddresses, then revert
         if (tokenAddresses.length != priceFeedAddresses.length) {
-            revert CoreStorage__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+            revert Errors.CoreStorage__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
         }
         // loop through the tokenAddresses array and count it by 1s
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
