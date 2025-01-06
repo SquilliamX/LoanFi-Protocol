@@ -3,8 +3,7 @@ pragma solidity ^0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { HealthFactor } from "./HealthFactor.sol";
-import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import { OracleLib } from "./libraries/OracleLib.sol";
+import { Errors } from "src/libraries/Errors.sol";
 
 contract Lending is HealthFactor {
     constructor(
@@ -39,7 +38,7 @@ contract Lending is HealthFactor {
 
         // Check if user has enough of the token they want to deposit
         if (IERC20(tokenCollateralAddress).balanceOf(msg.sender) < amountCollateralSent) {
-            revert LendingEngine__YouNeedMoreFunds();
+            revert Errors.Lending__YouNeedMoreFunds();
         }
         // we update state here, so when we update state, we must emit an event.
         // updates the user's balance in our tracking/mapping system by adding their new deposit amount to their existing balance for the specific collateral token they deposited
@@ -63,7 +62,7 @@ contract Lending is HealthFactor {
 
         // if it is not successful, then revert.
         if (!success) {
-            revert LendingEngine__TransferFailed();
+            revert Errors.Lending__TransferFailed();
         }
     }
 }
