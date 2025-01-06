@@ -66,7 +66,6 @@ contract Borrowing is Lending {
         private
         moreThanZero(amountToPayBack)
         isAllowedToken(tokenToPayBack)
-        nonReentrant
     {
         // if the address being paid on behalf of is the 0 address, revert
         if (onBehalfOf == address(0)) {
