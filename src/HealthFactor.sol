@@ -62,7 +62,7 @@ contract HealthFactor is CoreStorage {
             // Get how much of this specific token the user has deposited as collateral
             // Example: If user has deposited 5 WETH, amount = 5
             // Example: If user has deposited 2 WBTC, amount = 2
-            uint256 amount = _getCollateralBalanceOfUser(user, token);
+            uint256 amount = _getAmountOfTokenBorrowed(user, token);
 
             // After getting the token and the amount of tokens the user has, gets the correct amount of collateral the
             // user has deposited and saves it as a variable named totalBorrowedValueInUsd
@@ -133,7 +133,7 @@ contract HealthFactor is CoreStorage {
         // Adjust collateral value by liquidation threshold
         // Example: $1000 ETH * 50/100 = $500 adjusted collateral
         uint256 collateralAdjustedForThreshold =
-            (collateralValueInUsd * _getLiquidationBonus()) / _getLiquidationPrecision();
+            (collateralValueInUsd * _getLiquidationThreshold()) / _getLiquidationPrecision();
 
         // Calculate health factor: (adjusted collateral * PRECISION) / debt
         // Example: ($500 * 1e18) / $100 = 5e18 (health factor of 5)
