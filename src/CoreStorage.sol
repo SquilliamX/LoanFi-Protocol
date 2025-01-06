@@ -51,11 +51,11 @@ contract CoreStorage is ReentrancyGuard {
     // `indexed` parameters allow efficient filtering/searching of logs
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
 
+    event UserBorrowed(address indexed user, address indexed token, uint256 indexed amount);
+
     event BorrowedAmountRepaid(
         address indexed payer, address indexed onBehalfOf, address indexed token, uint256 amount
     );
-
-    event UserBorrowed(address indexed user, address indexed token, uint256 indexed amount);
 
     ///////////////////
     //     Type     //
@@ -70,7 +70,7 @@ contract CoreStorage is ReentrancyGuard {
     // revert.
     modifier moreThanZero(uint256 amount) {
         if (amount == 0) {
-            revert Errors.Lending__NeedsMoreThanZero();
+            revert Errors.AmountNeedsMoreThanZero();
         }
         _;
     }
@@ -81,7 +81,7 @@ contract CoreStorage is ReentrancyGuard {
     // The underscore (_) means "continue with the function code if check passes"
     modifier isAllowedToken(address token) {
         if (s_priceFeeds[token] == address(0)) {
-            revert Errors.Lending__TokenNotAllowed(token);
+            revert Errors.TokenNotAllowed(token);
         }
         _;
     }
