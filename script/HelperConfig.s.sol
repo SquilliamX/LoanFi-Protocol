@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Script} from "forge-std/Script.sol";
-import {MockV3Aggregator} from "../test/mocks/MockV3Aggregator.sol";
-import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import { Script } from "forge-std/Script.sol";
+import { MockV3Aggregator } from "../test/mocks/MockV3Aggregator.sol";
+import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 contract HelperConfig is Script {
     // Define a struct to hold all our network configuration data
@@ -21,7 +21,7 @@ contract HelperConfig is Script {
     // Constants for mock price feed configuration
     uint8 public constant DECIMALS = 8; // Chainlink price feeds use 8 decimals
     int256 public constant ETH_USD_PRICE = 2000e8; // Mock ETH price of $2000
-    int256 public constant BTC_USD_PRICE = 30000e8; // Mock BTC price of $3000
+    int256 public constant BTC_USD_PRICE = 30_000e8; // Mock BTC price of $3000
     int256 public constant LINK_USD_PRICE = 20e8; // Mock Link price of $20
     uint256 public constant INITIAL_BALANCE = 1000e8; // Initial balance for mock tokens
 
@@ -34,7 +34,7 @@ contract HelperConfig is Script {
     // Constructor determines which network config to use based on chainId
     constructor() {
         // If we're on Sepolia testnet
-        if (block.chainid == 11155111) {
+        if (block.chainid == 11_155_111) {
             activeNetworkConfig = getSepoliaEthConfig();
         } else {
             // For any other network (local, mainnet, etc)
@@ -52,7 +52,7 @@ contract HelperConfig is Script {
             wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063, // WBTC token on Sepolia
             link: 0x779877A7B0D9E8603169DdbD7836e478b4624789, // LINK token on Sepolia
             deployerKey: vm.envUint("PRIVATE_KEY") // Get deployer key from .env file for testing purposes        })
-        });
+         });
     }
 
     // Returns or creates configuration for local testing with mock contracts
@@ -66,7 +66,7 @@ contract HelperConfig is Script {
         vm.startBroadcast();
 
         // Deploy mock price feeds and tokens
-        MockV3Aggregator ethUsdPriceFeed = new MockV3Aggregator(DECIMALS, ETH_USD_PRICE);
+        MockV3Aggregator wethUsdPriceFeed = new MockV3Aggregator(DECIMALS, ETH_USD_PRICE);
         ERC20Mock wethMock = new ERC20Mock();
 
         MockV3Aggregator btcUsdPriceFeed = new MockV3Aggregator(DECIMALS, BTC_USD_PRICE);
@@ -79,7 +79,7 @@ contract HelperConfig is Script {
 
         // Return config with mock addresses
         return NetworkConfig({
-            wethUsdPriceFeed: address(ethUsdPriceFeed),
+            wethUsdPriceFeed: address(wethUsdPriceFeed),
             wbtcUsdPriceFeed: address(btcUsdPriceFeed),
             linkUsdPriceFeed: address(linkUsdPriceFeed),
             weth: address(wethMock),

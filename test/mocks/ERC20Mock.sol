@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
  * @title ERC20Mock
@@ -17,7 +17,12 @@ contract ERC20Mock is ERC20 {
      * @param initialBalance The amount of tokens to mint initially
      * @dev The constructor is payable to allow for testing scenarios involving ETH
      */
-    constructor(string memory name, string memory symbol, address initialAccount, uint256 initialBalance)
+    constructor(
+        string memory name,
+        string memory symbol,
+        address initialAccount,
+        uint256 initialBalance
+    )
         payable
         ERC20(name, symbol)
     {

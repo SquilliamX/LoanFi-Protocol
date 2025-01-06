@@ -1,1 +1,3 @@
-A Lending Borrowing Protocol under-development.
+# Lending Borrowing Protocol
+
+A decentralized lending and borrowing protocol currently in active development.
