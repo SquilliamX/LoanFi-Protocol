@@ -3,17 +3,15 @@ pragma solidity ^0.8.20;
 
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import { OracleLib } from "./libraries/OracleLib.sol";
-import { HealthFactor } from "./HealthFactor.sol";
-import { IStorage } from "./interfaces/IStorage.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract CoreStorage is IStorage, ReentrancyGuard {
+contract CoreStorage is ReentrancyGuard {
     ///////////////////////////////
     //           Errors          //
     ///////////////////////////////
     error LendingEngine__NeedsMoreThanZero();
     error LendingEngine__YouNeedMoreFunds();
-    error LendingEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+    error CoreStorage__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error LendingEngine__TokenNotAllowed(address token);
     error LendingEngine__TransferFailed();
     error BorrowingEngine__TransferFailed();
@@ -25,7 +23,7 @@ contract CoreStorage is IStorage, ReentrancyGuard {
     // First key: user's address
     // Second key: token address they deposited
     // Value: amount of that token they have deposited
-    mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
+    mapping(address user => mapping(address token => uint256 amount)) internal s_collateralDeposited;
 
     // tracks the total balances of users
     // should only be used to check a specific token balance of an address
@@ -57,8 +55,6 @@ contract CoreStorage is IStorage, ReentrancyGuard {
     uint256 private constant MIN_HEALTH_FACTOR = 1;
 
     uint256 private constant LIQUIDATION_BONUS = 10;
-
-    HealthFactor internal i_healthFactor;
 
     ///////////////////////////////
     //           Events          //
@@ -118,7 +114,7 @@ contract CoreStorage is IStorage, ReentrancyGuard {
     constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses) {
         // if the amount of tokenAddresses is different from the amount of priceFeedAddresses, then revert
         if (tokenAddresses.length != priceFeedAddresses.length) {
-            revert LendingEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+            revert CoreStorage__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
         }
         // loop through the tokenAddresses array and count it by 1s
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
@@ -128,7 +124,6 @@ contract CoreStorage is IStorage, ReentrancyGuard {
             // push all the tokens into our tokens array/list
             s_AllowedTokens.push(tokenAddresses[i]);
         }
-        i_healthFactor = new HealthFactor(tokenAddresses, priceFeedAddresses, address(this));
     }
 
     function getUsdValue(
@@ -137,13 +132,12 @@ contract CoreStorage is IStorage, ReentrancyGuard {
     )
         external
         view
-        override
         returns (uint256)
     {
         return _getUsdValue(token, amount);
     }
 
-    function _getUsdValue(address token, uint256 amount) private view returns (uint256) {
+    function _getUsdValue(address token, uint256 amount) internal view returns (uint256) {
         // gets the priceFeed of the token inputted by the user and saves it as a variable named priceFeed of type
         // AggregatorV3Interface
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
@@ -161,12 +155,17 @@ contract CoreStorage is IStorage, ReentrancyGuard {
     //         Helper Functions         //
     /////////////////////////////////////
 
-    function getMinimumHealthFactor() external pure override returns (uint256) {
+    function getMinimumHealthFactor() external pure returns (uint256) {
+        // Returns minimum health factor before liquidation (1e18 = 1)
+        return _getMinimumHealthFactor();
+    }
+
+    function _getMinimumHealthFactor() internal pure returns (uint256) {
         // Returns minimum health factor before liquidation (1e18 = 1)
         return MIN_HEALTH_FACTOR;
     }
 
-    function getPrecision() public pure override returns (uint256) {
+    function getPrecision() internal pure returns (uint256) {
         // Returns the precision scalar used for calculations (1e18)
         return PRECISION;
     }
@@ -181,12 +180,22 @@ contract CoreStorage is IStorage, ReentrancyGuard {
         return LIQUIDATION_THRESHOLD;
     }
 
-    function getLiquidationBonus() external pure override returns (uint256) {
+    function getLiquidationBonus() external pure returns (uint256) {
+        // Returns bonus percentage liquidators get when liquidating (10 = 10% bonus)
+        return _getLiquidationBonus();
+    }
+
+    function _getLiquidationBonus() internal pure returns (uint256) {
         // Returns bonus percentage liquidators get when liquidating (10 = 10% bonus)
         return LIQUIDATION_BONUS;
     }
 
-    function getLiquidationPrecision() external pure override returns (uint256) {
+    function getLiquidationPrecision() external pure returns (uint256) {
+        // Returns precision scalar for liquidation calculations (100)
+        return _getLiquidationPrecision();
+    }
+
+    function _getLiquidationPrecision() internal pure returns (uint256) {
         // Returns precision scalar for liquidation calculations (100)
         return LIQUIDATION_PRECISION;
     }
@@ -196,9 +205,9 @@ contract CoreStorage is IStorage, ReentrancyGuard {
     // 1. UI interfaces to know which tokens can be used as collateral
     // 2. Other contracts that need to interact with the system
     // 3. Checking which tokens are supported without accessing state variables directly
-    function getAllowedTokens() external view override returns (address[] memory) {
+    function getAllowedTokens() external view returns (address[] memory) {
         // Returns array of all accepted collateral token addresses
-        return s_AllowedTokens;
+        return _getAllowedTokens();
     }
 
     function _getAllowedTokens() internal view returns (address[] memory) {
@@ -216,13 +225,18 @@ contract CoreStorage is IStorage, ReentrancyGuard {
         return s_priceFeeds[token];
     }
 
-    function balanceOf(address account) private view returns (uint256) {
+    function balanceOf(address account) external view returns (uint256) {
         return s_balances[account];
     }
 
-    function getCollateralBalanceOfUser(address user, address token) external view override returns (uint256) {
+    function _getCollateralBalanceOfUser(address user, address token) internal view returns (uint256) {
         // Returns how much of a specific token a user has deposited as collateral
         return s_collateralDeposited[user][token];
+    }
+
+    function getCollateralBalanceOfUser(address user, address token) external view returns (uint256) {
+        // Returns how much of a specific token a user has deposited as collateral
+        return _getCollateralBalanceOfUser(user, token);
     }
 
     function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) external view returns (uint256) {
