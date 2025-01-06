@@ -13,10 +13,6 @@ contract CoreStorage is ReentrancyGuard {
     // Value: amount of that token they have deposited
     mapping(address user => mapping(address token => uint256 amount)) internal s_collateralDeposited;
 
-    // tracks the total balances of users
-    // should only be used to check a specific token balance of an address
-    mapping(address account => uint256 amount) private s_balances;
-
     // Track borrowed amounts per user per token
     mapping(address user => mapping(address token => uint256 amount)) internal s_TokenAmountsBorrowed;
 
@@ -38,7 +34,7 @@ contract CoreStorage is ReentrancyGuard {
 
     uint256 private constant LIQUIDATION_PRECISION = 100;
 
-    uint256 private constant PRECISION = 1;
+    uint256 private constant PRECISION = 1e18;
 
     uint256 private constant MIN_HEALTH_FACTOR = 1;
 
@@ -153,17 +149,32 @@ contract CoreStorage is ReentrancyGuard {
         return MIN_HEALTH_FACTOR;
     }
 
-    function getPrecision() internal pure returns (uint256) {
+    function getPrecision() external pure returns (uint256) {
+        // Returns the precision scalar used for calculations (1e18)
+        return _getPrecision();
+    }
+
+    function _getPrecision() internal pure returns (uint256) {
         // Returns the precision scalar used for calculations (1e18)
         return PRECISION;
     }
 
-    function getAdditionalFeedPrecision() private pure returns (uint256) {
+    function getAdditionalFeedPrecision() external pure returns (uint256) {
+        // Returns additional precision scalar for price feeds (1e10)
+        return _getAdditionalFeedPrecision();
+    }
+
+    function _getAdditionalFeedPrecision() private pure returns (uint256) {
         // Returns additional precision scalar for price feeds (1e10)
         return ADDITIONAL_FEED_PRECISION;
     }
 
     function getLiquidationThreshold() external pure returns (uint256) {
+        // Returns the liquidation threshold (50 = 50% of collateral value used for health factor)
+        return LIQUIDATION_THRESHOLD;
+    }
+
+    function _getLiquidationThreshold() internal pure returns (uint256) {
         // Returns the liquidation threshold (50 = 50% of collateral value used for health factor)
         return LIQUIDATION_THRESHOLD;
     }
@@ -213,10 +224,6 @@ contract CoreStorage is ReentrancyGuard {
         return s_priceFeeds[token];
     }
 
-    function balanceOf(address account) external view returns (uint256) {
-        return s_balances[account];
-    }
-
     function _getCollateralBalanceOfUser(address user, address token) internal view returns (uint256) {
         // Returns how much of a specific token a user has deposited as collateral
         return s_collateralDeposited[user][token];
@@ -240,7 +247,7 @@ contract CoreStorage is ReentrancyGuard {
         // 2. Divide by price (converted to uint) multiplied by ADDITIONAL_FEED_PRECISION (1e10)
         // Example: If price of ETH = $2000:
         // - To get 1 ETH worth: ($1000 * 1e18) / (2000 * 1e10) = 0.5 ETH
-        return (usdAmountInWei * getPrecision()) / (uint256(price) * getAdditionalFeedPrecision());
+        return (usdAmountInWei * _getPrecision()) / (uint256(price) * _getAdditionalFeedPrecision());
     }
 
     function updateCollateralDeposited(address user, address tokenDeposited, uint256 amount) internal {
