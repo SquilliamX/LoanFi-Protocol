@@ -20,7 +20,7 @@ contract HelperConfig is Script {
 
     // Constants for mock price feed configuration
     uint8 public constant DECIMALS = 8; // Chainlink price feeds use 8 decimals
-    int256 public constant ETH_USD_PRICE = 2000e8; // Mock ETH price of $2000
+    int256 public constant WETH_USD_PRICE = 2000e8; // Mock ETH price of $2000
     int256 public constant BTC_USD_PRICE = 30_000e8; // Mock BTC price of $3000
     int256 public constant LINK_USD_PRICE = 20e8; // Mock Link price of $20
     uint256 public constant INITIAL_BALANCE = 1000e8; // Initial balance for mock tokens
@@ -66,7 +66,7 @@ contract HelperConfig is Script {
         vm.startBroadcast();
 
         // Deploy mock price feeds and tokens
-        MockV3Aggregator wethUsdPriceFeed = new MockV3Aggregator(DECIMALS, ETH_USD_PRICE);
+        MockV3Aggregator wethUsdPriceFeed = new MockV3Aggregator(DECIMALS, WETH_USD_PRICE);
         ERC20Mock wethMock = new ERC20Mock();
 
         MockV3Aggregator btcUsdPriceFeed = new MockV3Aggregator(DECIMALS, BTC_USD_PRICE);
