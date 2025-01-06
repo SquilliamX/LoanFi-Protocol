@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Lending } from "src/Lending.sol";
+import { Withdraw } from "src/Withdraw.sol";
 
-contract Liquidations is Lending {
+contract Liquidations is Withdraw {
     constructor(
         address[] memory tokenAddresses,
         address[] memory priceFeedAddresses
     )
-        Lending(tokenAddresses, priceFeedAddresses)
+        Withdraw(tokenAddresses, priceFeedAddresses)
     { }
 }
