@@ -1,14 +1,14 @@
     // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Lending } from "src/Lending.sol";
+import { Borrowing } from "src/Borrowing.sol";
 
-contract Withdraw is Lending {
+contract Withdraw is Borrowing {
     constructor(
         address[] memory tokenAddresses,
         address[] memory priceFeedAddresses
     )
-        Lending(tokenAddresses, priceFeedAddresses)
+        Borrowing(tokenAddresses, priceFeedAddresses)
     { }
     /*
      * @param tokenCollateralAddress: The ERC20 token address of the collateral you're redeeming
