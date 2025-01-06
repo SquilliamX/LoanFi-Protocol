@@ -2,10 +2,9 @@
 pragma solidity ^0.8.20;
 
 import { CoreStorage } from "./CoreStorage.sol";
+import { Errors } from "src/libraries/Errors.sol";
 
 contract HealthFactor is CoreStorage {
-    error HealthFactor__BreaksHealthFactor(uint256);
-
     constructor(
         address[] memory tokenAddresses,
         address[] memory priceFeedAddresses
@@ -18,7 +17,7 @@ contract HealthFactor is CoreStorage {
         uint256 collateralValueInUsd
     )
         public
-        view
+        pure
         returns (uint256)
     {
         return _calculateHealthFactor(totalAmountBorrowed, collateralValueInUsd);
@@ -106,7 +105,7 @@ contract HealthFactor is CoreStorage {
         uint256 userHealthFactor = _healthFactor(user);
         // if it is less than 1, revert.
         if (userHealthFactor < _getMinimumHealthFactor()) {
-            revert HealthFactor__BreaksHealthFactor(userHealthFactor);
+            revert Errors.HealthFactor__BreaksHealthFactor(userHealthFactor);
         }
     }
 
@@ -125,7 +124,7 @@ contract HealthFactor is CoreStorage {
         uint256 collateralValueInUsd
     )
         internal
-        view
+        pure
         returns (uint256)
     {
         // If user hasn't borrowed any value, they have perfect health factor
