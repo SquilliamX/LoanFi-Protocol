@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Lending } from "src/Lending.sol";
+import { Liquidations } from "src/Liquidations.sol";
 
-contract InterestRate is Lending {
+contract InterestRate is Liquidations {
     constructor(
         address[] memory tokenAddresses,
         address[] memory priceFeedAddresses
     )
-        Lending(tokenAddresses, priceFeedAddresses)
+        Liquidations(tokenAddresses, priceFeedAddresses)
     { }
 
     function updateInterestRewardForLending() public /* onlyOwner */ { }
