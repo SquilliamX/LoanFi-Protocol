@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import { Lending } from "src/Lending.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Errors } from "src/libraries/Errors.sol";
 
 contract Borrowing is Lending {
     constructor(
@@ -40,7 +41,7 @@ contract Borrowing is Lending {
         uint256 availableToBorrow = getAvailableToBorrow(tokenToBorrow);
         // if user is trying to borrow more than available, revert
         if (amountToBorrow > availableToBorrow) {
-            revert LendingEngine__NotEnoughAvailableTokens();
+            revert Errors.Lending__NotEnoughAvailableTokens();
         }
 
         // Track the specific token amounts & USD amounts borrowed
@@ -52,7 +53,7 @@ contract Borrowing is Lending {
         // attempt to send borrowed amount to the msg.sender
         bool success = IERC20(tokenToBorrow).transfer(msg.sender, amountToBorrow);
         if (!success) {
-            revert BorrowingEngine__TransferFailed();
+            revert Errors.Borrowing__TransferFailed();
         }
         // emit event when msg.sender borrows funds
         emit UserBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
@@ -70,13 +71,13 @@ contract Borrowing is Lending {
     {
         // if the address being paid on behalf of is the 0 address, revert
         if (onBehalfOf == address(0)) {
-            revert BorrowingEngine__ZeroAddressNotAllowed();
+            revert Errors.Borrowing__ZeroAddressNotAllowed();
         }
 
         // Safety check to prevent users from overpaying their debt
         uint256 borrowedAmount = getAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack);
         if (borrowedAmount < amountToPayBack) {
-            revert BorrowingEngine__OverpaidDebt();
+            revert Errors.Borrowing__OverpaidDebt();
         }
 
         // Update state BEFORE external calls (CEI pattern)
@@ -93,7 +94,7 @@ contract Borrowing is Lending {
         // Check if transfer was successful
         // This is a backup check since transferFrom would normally revert on failure
         if (!success) {
-            revert BorrowingEngine__TransferFailed();
+            revert Errors.Borrowing__TransferFailed();
         }
         // emit event
         emit BorrowedAmountRepaid(msg.sender, onBehalfOf, tokenToPayBack, amountToPayBack);
