@@ -36,7 +36,7 @@ contract CoreStorage is ReentrancyGuard {
 
     uint256 private constant PRECISION = 1e18;
 
-    uint256 private constant MIN_HEALTH_FACTOR = 1;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18;
 
     uint256 private constant LIQUIDATION_BONUS = 10;
 
@@ -252,5 +252,13 @@ contract CoreStorage is ReentrancyGuard {
 
     function updateCollateralDeposited(address user, address tokenDeposited, uint256 amount) internal {
         s_collateralDeposited[user][tokenDeposited] += amount;
+    }
+
+    function getAmountOfTokenBorrowed(address user, address token) external view returns (uint256) {
+        return _getAmountOfTokenBorrowed(user, token);
+    }
+
+    function _getAmountOfTokenBorrowed(address user, address token) internal view returns (uint256) {
+        return s_TokenAmountsBorrowed[user][token];
     }
 }
