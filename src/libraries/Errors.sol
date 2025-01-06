@@ -5,9 +5,7 @@ library Errors {
     ///////////////////////////////
     //      Lending Errors      //
     ///////////////////////////////
-    error Lending__NeedsMoreThanZero();
     error Lending__YouNeedMoreFunds();
-    error Lending__TokenNotAllowed(address token);
     error Lending__TransferFailed();
 
     ///////////////////////////////
@@ -27,4 +25,10 @@ library Errors {
     //   HealthFactor Errors    //
     ///////////////////////////////
     error HealthFactor__BreaksHealthFactor(uint256);
+
+    ///////////////////////////////
+    //      Shared Errors       //
+    ///////////////////////////////
+    error AmountNeedsMoreThanZero();
+    error TokenNotAllowed(address token);
 }
