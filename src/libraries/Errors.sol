@@ -9,7 +9,6 @@ library Errors {
     error Lending__YouNeedMoreFunds();
     error Lending__TokenNotAllowed(address token);
     error Lending__TransferFailed();
-    error Lending__NotEnoughAvailableTokens();
 
     ///////////////////////////////
     //     Borrowing Errors     //
@@ -17,6 +16,7 @@ library Errors {
     error Borrowing__TransferFailed();
     error Borrowing__OverpaidDebt();
     error Borrowing__ZeroAddressNotAllowed();
+    error Borrowing__NotEnoughAvailableCollateral();
 
     ///////////////////////////////
     //    CoreStorage Errors    //
