@@ -35,13 +35,12 @@ contract Borrowing is Lending {
         private
         moreThanZero(amountToBorrow)
         isAllowedToken(tokenToBorrow)
-        nonReentrant
     {
         // get the amount available to borrow
         uint256 availableToBorrow = getAvailableToBorrow(tokenToBorrow);
         // if user is trying to borrow more than available, revert
         if (amountToBorrow > availableToBorrow) {
-            revert Errors.Lending__NotEnoughAvailableTokens();
+            revert Errors.Borrowing__NotEnoughAvailableCollateral();
         }
 
         // Track the specific token amounts & USD amounts borrowed
@@ -75,7 +74,7 @@ contract Borrowing is Lending {
         }
 
         // Safety check to prevent users from overpaying their debt
-        uint256 borrowedAmount = getAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack);
+        uint256 borrowedAmount = _getAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack);
         if (borrowedAmount < amountToPayBack) {
             revert Errors.Borrowing__OverpaidDebt();
         }
@@ -141,7 +140,7 @@ contract Borrowing is Lending {
             if (_getAllowedTokens()[i] == token) {
                 // Sum up all borrowed amounts of this token across users
                 for (uint256 j = 0; j < _getAllowedTokens().length; j++) {
-                    totalBorrowed += getAmountOfTokenBorrowed(msg.sender, token);
+                    totalBorrowed += _getAmountOfTokenBorrowed(msg.sender, token);
                 }
                 // exit loop immediately
                 break;
@@ -149,9 +148,5 @@ contract Borrowing is Lending {
         }
         // return the total amount borrowed of these tokens
         return totalBorrowed;
-    }
-
-    function getAmountOfTokenBorrowed(address user, address token) private view returns (uint256) {
-        return s_TokenAmountsBorrowed[user][token];
     }
 }
