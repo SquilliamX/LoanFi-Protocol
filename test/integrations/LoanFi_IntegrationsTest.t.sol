@@ -31,6 +31,9 @@ contract LoanFi_IntegrationsTest is Test {
     uint256 public deployerKey; // Private key of the deployer
 
     uint256 public constant DEPOSIT_AMOUNT = 5 ether;
+    uint256 public constant LINK_AMOUNT_TO_BORROW = 10e18; // $100 USD
+    uint256 public constant WETH_AMOUNT_TO_BORROW = 2e18; // $4,000 USD
+    uint256 public constant WBTC_AMOUNT_TO_BORROW = 1e18; // $30,000 USD
 
     address public user = makeAddr("user"); // Address of the USER
 
@@ -76,6 +79,10 @@ contract LoanFi_IntegrationsTest is Test {
         ERC20Mock(weth).mint(user, STARTING_USER_BALANCE);
         ERC20Mock(wbtc).mint(user, STARTING_USER_BALANCE);
         ERC20Mock(link).mint(user, STARTING_USER_BALANCE);
+
+        ERC20Mock(weth).mint(address(loanFi), WETH_AMOUNT_TO_BORROW);
+        ERC20Mock(wbtc).mint(address(loanFi), WBTC_AMOUNT_TO_BORROW);
+        ERC20Mock(link).mint(address(loanFi), LINK_AMOUNT_TO_BORROW);
     }
 
     //////////////////////////
@@ -103,6 +110,34 @@ contract LoanFi_IntegrationsTest is Test {
         // Expect revert when arrays don't match in length
         vm.expectRevert(Errors.CoreStorage__TokenAddressesAndPriceFeedAddressesMustBeSameLength.selector);
         new CoreStorage(tokenAddresses, feedAddresses);
+    }
+
+    function testCoreStorageConstructor() public {
+        // Create test arrays
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = weth;
+        testTokens[1] = wbtc;
+        testTokens[2] = link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = wethUsdPriceFeed;
+        testFeeds[1] = btcUsdPriceFeed;
+        testFeeds[2] = linkUsdPriceFeed;
+
+        // Deploy new CoreStorage
+        CoreStorage coreStorage = new CoreStorage(testTokens, testFeeds);
+
+        // Test initialization
+        address[] memory allowedTokens = coreStorage.getAllowedTokens();
+        assertEq(allowedTokens.length, 3, "Should have 3 allowed tokens");
+        assertEq(allowedTokens[0], weth, "First token should be WETH");
+        assertEq(allowedTokens[1], wbtc, "Second token should be WBTC");
+        assertEq(allowedTokens[2], link, "Third token should be LINK");
+
+        // Test price feed mappings
+        assertEq(coreStorage.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
+        assertEq(coreStorage.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
+        assertEq(coreStorage.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
     }
 
     function testGetCollateralBalanceOfUser() public UserDeposited {
@@ -151,7 +186,7 @@ contract LoanFi_IntegrationsTest is Test {
     }
 
     function testGetMinimumHealthFactor() public view {
-        uint256 minimumHealthFactor = 1;
+        uint256 minimumHealthFactor = 1e18;
         assertEq(loanFi.getMinimumHealthFactor(), minimumHealthFactor);
     }
 
@@ -195,9 +230,125 @@ contract LoanFi_IntegrationsTest is Test {
     //  HealthFactor Tests  //
     //////////////////////////
 
+    function testHealthFactorConstructor() public {
+        // Create new arrays for tokens and price feeds
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = weth;
+        testTokens[1] = wbtc;
+        testTokens[2] = link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = wethUsdPriceFeed;
+        testFeeds[1] = btcUsdPriceFeed;
+        testFeeds[2] = linkUsdPriceFeed;
+
+        // Deploy new HealthFactor instance
+        HealthFactor healthFactor = new HealthFactor(testTokens, testFeeds);
+
+        // Verify initialization
+        address[] memory allowedTokens = healthFactor.getAllowedTokens();
+        assertEq(allowedTokens.length, 3, "Should have 3 allowed tokens");
+        assertEq(allowedTokens[0], weth, "First token should be WETH");
+        assertEq(allowedTokens[1], wbtc, "Second token should be WBTC");
+        assertEq(allowedTokens[2], link, "Third token should be LINK");
+
+        // Verify price feed mappings
+        assertEq(healthFactor.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
+        assertEq(healthFactor.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
+        assertEq(healthFactor.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
+    }
+
+    // Tests that the health factor is calculated correctly for a user's position
+    function testProperlyReportsHealthFactorWhenUserHasNotBorrowed() public UserDeposited {
+        // since the user has not borrowed anything, his health score should be perfect!
+        uint256 expectedHealthFactor = type(uint256).max;
+        uint256 healthFactor = loanFi.getHealthFactor(user);
+        // $0 borrowed with $10,000 collateral at 50% liquidation threshold
+        // 10,000 * 0.5 = 5,000
+        // 5,000 / 0 = prefect health factor
+
+        // Verify that the calculated health factor matches expected value
+        assertEq(healthFactor, expectedHealthFactor);
+    }
+
+    // Tests that the health factor is calculated correctly for a user's position
+    function testProperlyReportsHealthFactorWhenUserHasBorrowed() public UserDepositedAndBorrowedLink {
+        // since the user has borrowed $100, his health score should be 50! anything over 1 is good!
+        uint256 expectedHealthFactor = 50e18;
+        uint256 healthFactor = loanFi.getHealthFactor(user);
+        // $100 borrowed with $10,000 collateral at 50% liquidation threshold
+        // 10,000 * 0.5 = 5,000
+        // 5,000 / 100 = 50 health factor
+
+        // Verify that the calculated health factor matches expected value
+        assertEq(healthFactor, expectedHealthFactor);
+    }
+
+    function testgetAccountCollateralValueInUsd() public UserDeposited {
+        // Start impersonating our test user
+        vm.startPrank(user);
+        // Approve LendingEngine to spend user's WETH
+        ERC20Mock(wbtc).approve(address(loanFi), DEPOSIT_AMOUNT);
+        ERC20Mock(link).approve(address(loanFi), DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(wbtc, DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(link, DEPOSIT_AMOUNT);
+        vm.stopPrank();
+
+        // user deposited 5Link($10/Token) + 5 WETH($2000/Token) + 5WBTC($30,000) = $160,050
+        uint256 expectedDepositedAmountInUsd = 160_050e18;
+        assertEq(loanFi.getAccountCollateralValueInUsd(user), expectedDepositedAmountInUsd);
+    }
+
+    function testgetAccountBorrowedValueInUsd() public UserDeposited {
+        // Start impersonating our test user
+        vm.startPrank(user);
+        // Approve LendingEngine to spend user's WETH
+        ERC20Mock(wbtc).approve(address(loanFi), DEPOSIT_AMOUNT);
+        ERC20Mock(link).approve(address(loanFi), DEPOSIT_AMOUNT);
+        // user deposited 5Link($10/Token) + 5 WETH($2000/Token) + 5WBTC($30,000) = $160,050
+        loanFi.depositCollateral(wbtc, DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(link, DEPOSIT_AMOUNT);
+
+        loanFi.borrowFunds(link, LINK_AMOUNT_TO_BORROW);
+        loanFi.borrowFunds(weth, WETH_AMOUNT_TO_BORROW);
+        loanFi.borrowFunds(wbtc, WBTC_AMOUNT_TO_BORROW);
+        vm.stopPrank();
+
+        uint256 expectedBorrowedAmountInUsd = 34_100e18;
+        assertEq(loanFi.getAccountBorrowedValueInUsd(user), expectedBorrowedAmountInUsd);
+    }
+
     ///////////////////////////
     //  LendingEngine Tests  //
     //////////////////////////
+
+    function testLendingConstructor() public {
+        // Create new arrays for tokens and price feeds
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = weth;
+        testTokens[1] = wbtc;
+        testTokens[2] = link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = wethUsdPriceFeed;
+        testFeeds[1] = btcUsdPriceFeed;
+        testFeeds[2] = linkUsdPriceFeed;
+
+        // Deploy new HealthFactor instance
+        Lending lending = new Lending(testTokens, testFeeds);
+
+        // Verify initialization
+        address[] memory allowedTokens = lending.getAllowedTokens();
+        assertEq(allowedTokens.length, 3, "Should have 3 allowed tokens");
+        assertEq(allowedTokens[0], weth, "First token should be WETH");
+        assertEq(allowedTokens[1], wbtc, "Second token should be WBTC");
+        assertEq(allowedTokens[2], link, "Third token should be LINK");
+
+        // Verify price feed mappings
+        assertEq(lending.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
+        assertEq(lending.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
+        assertEq(lending.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
+    }
 
     // testing deposit function
     function testDepositWorks() public {
@@ -346,6 +497,45 @@ contract LoanFi_IntegrationsTest is Test {
     /////////////////////////////
     //  BorrowingEngine Tests  //
     ////////////////////////////
+
+    // Modifier to set up the test state with collateral deposited and user borrowed link
+    modifier UserDepositedAndBorrowedLink() {
+        // Start impersonating the test user
+        vm.startPrank(user);
+        // Approve the DSCEngine contract to spend user's WETH
+        // User deposits $10,000
+        ERC20Mock(weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+
+        loanFi.depositCollateral(weth, DEPOSIT_AMOUNT);
+
+        // Deposit collateral and borrow link in one transaction
+        // link is $10/token, user borrows 10, so thats $100 borrowed
+        loanFi.borrowFunds(link, LINK_AMOUNT_TO_BORROW);
+        // Stop impersonating the user
+        vm.stopPrank();
+        _;
+    }
+
+    // Tests that the health factor is calculated correctly for a user's position
+    function testRevertsWhenThereIsNotEnoughCollateral() public UserDepositedAndBorrowedLink {
+        address otherUser = makeAddr("otherUser");
+        ERC20Mock(weth).mint(otherUser, STARTING_USER_BALANCE);
+
+        // Start impersonating the test user
+        vm.startPrank(otherUser);
+        // Approve the DSCEngine contract to spend user's WETH
+        // User deposits $10,000
+        ERC20Mock(weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+
+        loanFi.depositCollateral(weth, DEPOSIT_AMOUNT);
+
+        // test should revert since there is no link in the contract
+        vm.expectRevert(Errors.Borrowing__NotEnoughAvailableCollateral.selector);
+        // Deposit collateral and borrow link
+        loanFi.borrowFunds(link, LINK_AMOUNT_TO_BORROW);
+        // Stop impersonating the user
+        vm.stopPrank();
+    }
 
     /////////////////////
     //  LoanFi Tests  //
