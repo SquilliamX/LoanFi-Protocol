@@ -17,6 +17,7 @@ import { Errors } from "src/libraries/Errors.sol";
 import { MockFailedTransferFrom } from "test/mocks/MockFailedTransferFrom.sol";
 import { MockBorrowing } from "test/mocks/MockBorrowing.sol";
 import { OracleLib } from "src/libraries/OracleLib.sol";
+import { Borrowing } from "src/Borrowing.sol";
 
 contract LoanFi_IntegrationsTest is Test {
     LoanFi loanFi;
@@ -231,6 +232,13 @@ contract LoanFi_IntegrationsTest is Test {
         uint256 expectedWeth = 0.05 ether;
         uint256 amountWeth = loanFi.getTokenAmountFromUsd(weth, 100 ether);
         assertEq(amountWeth, expectedWeth);
+    }
+
+    function testGetTotalTokenAmountsBorrowed() public UserDepositedAndBorrowedLink {
+        uint256 totalAmountsBorrowed = loanFi.getTotalTokenAmountsBorrowed(link);
+        uint256 expectedAmountBorrowed = 10e18;
+
+        assertEq(totalAmountsBorrowed, expectedAmountBorrowed);
     }
 
     ///////////////////////////
@@ -584,8 +592,36 @@ contract LoanFi_IntegrationsTest is Test {
     }
 
     /////////////////////////////
-    //  BorrowingEngine Tests  //
+    //     Borrowing Tests    //
     ////////////////////////////
+
+    function testBorrowingConstructor() public {
+        // Create new arrays for tokens and price feeds
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = weth;
+        testTokens[1] = wbtc;
+        testTokens[2] = link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = wethUsdPriceFeed;
+        testFeeds[1] = btcUsdPriceFeed;
+        testFeeds[2] = linkUsdPriceFeed;
+
+        // Deploy new HealthFactor instance
+        Borrowing borrowing = new Borrowing(testTokens, testFeeds);
+
+        // Verify initialization
+        address[] memory allowedTokens = borrowing.getAllowedTokens();
+        assertEq(allowedTokens.length, 3, "Should have 3 allowed tokens");
+        assertEq(allowedTokens[0], weth, "First token should be WETH");
+        assertEq(allowedTokens[1], wbtc, "Second token should be WBTC");
+        assertEq(allowedTokens[2], link, "Third token should be LINK");
+
+        // Verify price feed mappings
+        assertEq(borrowing.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
+        assertEq(borrowing.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
+        assertEq(borrowing.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
+    }
 
     function testBorrowingWorksProperly() public UserDeposited {
         // get the amount the user borrowed before (which is 0)
@@ -629,8 +665,7 @@ contract LoanFi_IntegrationsTest is Test {
         vm.stopPrank();
     }
 
-    // Tests that the health factor is calculated correctly for a user's position
-    function testRevertsWhenThereIsNotEnoughCollateral() public UserDepositedAndBorrowedLink {
+    function testRevertsWhenThereIsNoCollateral() public UserDepositedAndBorrowedLink {
         address otherUser = makeAddr("otherUser");
         ERC20Mock(weth).mint(otherUser, STARTING_USER_BALANCE);
 
@@ -648,6 +683,37 @@ contract LoanFi_IntegrationsTest is Test {
         loanFi.borrowFunds(link, LINK_AMOUNT_TO_BORROW);
         // Stop impersonating the user
         vm.stopPrank();
+
+        uint256 actualAmountOfLinkInContract = loanFi.getTotalCollateralOfToken(link);
+        uint256 expectedAmountOfLinkInContract = 0;
+        assertEq(actualAmountOfLinkInContract, expectedAmountOfLinkInContract);
+    }
+
+    function testRevertsWhenThereIsNotEnoughCollateral() public UserDepositedAndBorrowedLink {
+        uint256 twoLinkTokensAvailable = 2e18;
+        ERC20Mock(link).mint(address(loanFi), twoLinkTokensAvailable);
+
+        address otherUser = makeAddr("otherUser");
+        ERC20Mock(weth).mint(otherUser, STARTING_USER_BALANCE);
+
+        // Start impersonating the test user
+        vm.startPrank(otherUser);
+        // Approve the loanFi contract to spend user's WETH
+        // User deposits $10,000
+        ERC20Mock(weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+
+        loanFi.depositCollateral(weth, DEPOSIT_AMOUNT);
+
+        // test should revert since there is no link in the contract
+        vm.expectRevert(Errors.Borrowing__NotEnoughAvailableCollateral.selector);
+        // Deposit collateral and borrow link
+        loanFi.borrowFunds(link, LINK_AMOUNT_TO_BORROW);
+        // Stop impersonating the user
+        vm.stopPrank();
+
+        uint256 actualAmountOfLinkInContract = loanFi.getTotalCollateralOfToken(link);
+        uint256 expectedAmountOfLinkInContract = 2e18;
+        assertEq(actualAmountOfLinkInContract, expectedAmountOfLinkInContract);
     }
 
     function testMappingsAreCorrectlyUpdatedAfterBorrowing() public UserDepositedAndBorrowedLink {
@@ -947,11 +1013,100 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(actualCollateral, expectedCollateral);
     }
 
-    function testGetTotalBorrowedOfToken() public UserDepositedAndBorrowedLink {
-        uint256 expectedAmountOfBorrowedTokens = 10e18; 
-        uint256 actualAmountOfBorrowedTokens = loanFi.getTotalBorrowedOfToken(link);
+    /////////////////////////
+    //  Liquidation Tests  //
+    /////////////////////////
 
-        assertEq(actualAmountOfBorrowedTokens, expectedAmountOfBorrowedTokens);
+    function testLiquidationsConstructor() public {
+        // Create new arrays for tokens and price feeds
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = weth;
+        testTokens[1] = wbtc;
+        testTokens[2] = link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = wethUsdPriceFeed;
+        testFeeds[1] = btcUsdPriceFeed;
+        testFeeds[2] = linkUsdPriceFeed;
+
+        // Deploy new HealthFactor instance
+        Liquidations liquidations = new Liquidations(testTokens, testFeeds);
+
+        // Verify initialization
+        address[] memory allowedTokens = liquidations.getAllowedTokens();
+        assertEq(allowedTokens.length, 3, "Should have 3 allowed tokens");
+        assertEq(allowedTokens[0], weth, "First token should be WETH");
+        assertEq(allowedTokens[1], wbtc, "Second token should be WBTC");
+        assertEq(allowedTokens[2], link, "Third token should be LINK");
+
+        // Verify price feed mappings
+        assertEq(liquidations.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
+        assertEq(liquidations.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
+        assertEq(liquidations.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
+    }
+
+    ///////////////////////////
+    //     Withdraw Tests    //
+    //////////////////////////
+
+    function testWithdrawConstructor() public {
+        // Create new arrays for tokens and price feeds
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = weth;
+        testTokens[1] = wbtc;
+        testTokens[2] = link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = wethUsdPriceFeed;
+        testFeeds[1] = btcUsdPriceFeed;
+        testFeeds[2] = linkUsdPriceFeed;
+
+        // Deploy new HealthFactor instance
+        Withdraw withdraw = new Withdraw(testTokens, testFeeds);
+
+        // Verify initialization
+        address[] memory allowedTokens = withdraw.getAllowedTokens();
+        assertEq(allowedTokens.length, 3, "Should have 3 allowed tokens");
+        assertEq(allowedTokens[0], weth, "First token should be WETH");
+        assertEq(allowedTokens[1], wbtc, "Second token should be WBTC");
+        assertEq(allowedTokens[2], link, "Third token should be LINK");
+
+        // Verify price feed mappings
+        assertEq(withdraw.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
+        assertEq(withdraw.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
+        assertEq(withdraw.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
+    }
+
+    //////////////////////////
+    //  InterestRate Tests  //
+    //////////////////////////
+
+    function testInterestRateConstructor() public {
+        // Create new arrays for tokens and price feeds
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = weth;
+        testTokens[1] = wbtc;
+        testTokens[2] = link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = wethUsdPriceFeed;
+        testFeeds[1] = btcUsdPriceFeed;
+        testFeeds[2] = linkUsdPriceFeed;
+
+        // Deploy new HealthFactor instance
+        InterestRate interestRate = new InterestRate(testTokens, testFeeds);
+
+        // Verify initialization
+        address[] memory allowedTokens = interestRate.getAllowedTokens();
+        assertEq(allowedTokens.length, 3, "Should have 3 allowed tokens");
+        assertEq(allowedTokens[0], weth, "First token should be WETH");
+        assertEq(allowedTokens[1], wbtc, "Second token should be WBTC");
+        assertEq(allowedTokens[2], link, "Third token should be LINK");
+
+        // Verify price feed mappings
+        assertEq(interestRate.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
+        assertEq(interestRate.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
+        assertEq(interestRate.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
     }
 
     /////////////////////
@@ -969,26 +1124,28 @@ contract LoanFi_IntegrationsTest is Test {
      * 2. Verify array length
      * 3. For each token, verify its price feed mapping
      */
-    function testConstructorInitializesTokensAndPriceFeeds() public view {
-        // Get the allowed tokens array
+    function testLoanFiConstructor() public view {
+        // Create new arrays for tokens and price feeds
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = weth;
+        testTokens[1] = wbtc;
+        testTokens[2] = link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = wethUsdPriceFeed;
+        testFeeds[1] = btcUsdPriceFeed;
+        testFeeds[2] = linkUsdPriceFeed;
+
+        // Verify initialization
         address[] memory allowedTokens = loanFi.getAllowedTokens();
-
-        // Check array length matches our setup
         assertEq(allowedTokens.length, 3, "Should have 3 allowed tokens");
+        assertEq(allowedTokens[0], weth, "First token should be WETH");
+        assertEq(allowedTokens[1], wbtc, "Second token should be WBTC");
+        assertEq(allowedTokens[2], link, "Third token should be LINK");
 
-        // Check each token is properly registered with its price feed
-        for (uint256 i = 0; i < allowedTokens.length; i++) {
-            // Get the price feed for this token
-            address priceFeed = loanFi.getCollateralTokenPriceFeed(allowedTokens[i]);
-
-            // Verify token and price feed pairs match our setup
-            if (allowedTokens[i] == weth) {
-                assertEq(priceFeed, wethUsdPriceFeed, "WETH price feed mismatch");
-            } else if (allowedTokens[i] == wbtc) {
-                assertEq(priceFeed, btcUsdPriceFeed, "WBTC price feed mismatch");
-            } else if (allowedTokens[i] == link) {
-                assertEq(priceFeed, linkUsdPriceFeed, "LINK price feed mismatch");
-            }
-        }
+        // Verify price feed mappings
+        assertEq(loanFi.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
+        assertEq(loanFi.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
+        assertEq(loanFi.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
     }
 }
