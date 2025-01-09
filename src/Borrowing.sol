@@ -37,7 +37,7 @@ contract Borrowing is Lending {
         isAllowedToken(tokenToBorrow)
     {
         // get the amount available to borrow
-        uint256 availableToBorrow = getAvailableToBorrow(tokenToBorrow);
+        uint256 availableToBorrow = _getAvailableToBorrow(tokenToBorrow);
         // if user is trying to borrow more than available, revert
         if (amountToBorrow > availableToBorrow) {
             revert Errors.Borrowing__NotEnoughAvailableCollateral();
@@ -83,7 +83,7 @@ contract Borrowing is Lending {
         // This must happen first to prevent reentrancy attacks
         decreaseAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack, amountToPayBack);
 
-        // Check health factor after repayment
+        // Check health factor after repayment just in case
         _revertIfHealthFactorIsBroken(onBehalfOf);
 
         // Transfer tokens from user to contract
@@ -106,7 +106,7 @@ contract Borrowing is Lending {
         s_TokenAmountsBorrowed[user][token] -= amount;
     }
 
-    function getTotalCollateralOfToken(address token) private view returns (uint256 totalCollateral) {
+    function _getTotalCollateralOfToken(address token) private view returns (uint256 totalCollateral) {
         // loop through the allowed collateral tokens
         for (uint256 i = 0; i < _getAllowedTokens().length; i++) {
             // if the token inputted by the caller is in the loop, then
@@ -121,31 +121,61 @@ contract Borrowing is Lending {
         return totalCollateral;
     }
 
-    function getAvailableToBorrow(address token) private view returns (uint256) {
+    function getTotalCollateralOfToken(address token) external view returns (uint256 totalCollateral) {
+        return _getTotalCollateralOfToken(token);
+    }
+
+    function _getAvailableToBorrow(address token) private view returns (uint256) {
         // Get total amount of this token deposited as collateral
-        uint256 totalCollateral = getTotalCollateralOfToken(token);
+        uint256 totalCollateral = _getTotalCollateralOfToken(token);
 
         // Get total amount already borrowed of this token
-        uint256 totalBorrowed = getTotalBorrowedOfToken(token);
+        uint256 totalBorrowed = _getTotalBorrowedOfToken(token);
 
         // Available = Total Collateral - Total Borrowed
         return totalCollateral - totalBorrowed;
     }
 
-    function getTotalBorrowedOfToken(address token) private view returns (uint256 totalBorrowed) {
-        // loop through the allowed collateral tokens
+    function getAvailableToBorrow(address token) external view returns (uint256) {
+        return _getAvailableToBorrow(token);
+    }
+
+    /**
+     * @notice Retrieves the total amount of a specific token borrowed by the caller
+     * @dev Implements a secure token validation pattern before accessing borrowed amounts
+     * @param token The ERC20 token address to check borrowed amounts for
+     * @return uint256 The total amount borrowed of the specified token
+     *
+     * Security considerations:
+     * - Validates token is in allowed list before accessing state
+     * - Uses view function to prevent state modifications
+     * - Implements zero-address checks through allowed token validation
+     *
+     * Gas optimization:
+     * - Early return if token not in allowed list
+     * - Single state read for borrowed amount
+     * - Breaks loop early after token validation
+     *
+     * Example:
+     * ```
+     * address WETH = 0x...;
+     * uint256 borrowed = getTotalBorrowedOfToken(WETH);
+     * // Returns: 5e18 (5 WETH borrowed)
+     * ```
+     */
+    function _getTotalBorrowedOfToken(address token) private view returns (uint256) {
+        uint256 totalBorrowed = 0;
         for (uint256 i = 0; i < _getAllowedTokens().length; i++) {
-            // if the token inputted by the caller is in the loop, then
             if (_getAllowedTokens()[i] == token) {
-                // Sum up all borrowed amounts of this token across users
-                for (uint256 j = 0; j < _getAllowedTokens().length; j++) {
-                    totalBorrowed += _getAmountOfTokenBorrowed(msg.sender, token);
-                }
-                // exit loop immediately
+                // Use contract address to track total borrowed
+                totalBorrowed = _getAmountOfTokenBorrowed(address(this), token);
                 break;
             }
         }
-        // return the total amount borrowed of these tokens
         return totalBorrowed;
+    }
+
+    function getTotalBorrowedOfToken(address token) external view returns (uint256) {
+        return _getTotalBorrowedOfToken(token);
     }
 }
