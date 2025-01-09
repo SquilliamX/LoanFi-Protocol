@@ -57,8 +57,8 @@ contract Lending is HealthFactor {
         bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateralSent);
         // This transferFrom will fail if there's no prior approval. The sequence must be:
         // 1. User approves Lending Engine to spend their tokens
-        // User calls depositCollateral
-        // Lending Engine uses transferFrom to move the tokens
+        // 2. User calls depositCollateral
+        // 3. Lending Engine uses transferFrom to move the tokens
 
         // if it is not successful, then revert.
         if (!success) {
