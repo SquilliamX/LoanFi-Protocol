@@ -36,7 +36,17 @@ contract Borrowing is Lending {
         moreThanZero(amountToBorrow)
         isAllowedToken(tokenToBorrow)
     {
-        // get the amount available to borrow
+        // 1. Physical Token Check
+        // Verify the contract actually has enough tokens in its possession
+        // This prevents attempts to transfer tokens that don't exist in the contract
+        if (IERC20(tokenToBorrow).balanceOf(address(this)) < amountToBorrow) {
+            revert Errors.Borrowing__NotEnoughAvailableCollateral();
+        }
+
+        // 2. Protocol Accounting Check
+        // Get how many tokens are available according to protocol's accounting
+        // This considers all existing loans and ensures we're not lending tokens
+        // that are already promised to other borrowers
         uint256 availableToBorrow = _getAvailableToBorrow(tokenToBorrow);
         // if user is trying to borrow more than available, revert
         if (amountToBorrow > availableToBorrow) {
@@ -44,7 +54,7 @@ contract Borrowing is Lending {
         }
 
         // Track the specific token amounts & USD amounts borrowed
-        increaseAmountOfTokenBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
+        increaseUserDebtAndTotalDebtBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
 
         // This will check if total borrowed exceeds collateral limits
         _revertIfHealthFactorIsBroken(msg.sender);
@@ -81,7 +91,7 @@ contract Borrowing is Lending {
         // Update state BEFORE external calls (CEI pattern)
         // Decrease the user's borrowed balance in our internal accounting
         // This must happen first to prevent reentrancy attacks
-        decreaseAmountOfTokenBorrowed(onBehalfOf, tokenToPayBack, amountToPayBack);
+        decreaseUserDebtAndTotalDebtBorrowed(onBehalfOf, tokenToPayBack, amountToPayBack);
 
         // Check health factor after repayment just in case
         _revertIfHealthFactorIsBroken(onBehalfOf);
@@ -96,14 +106,6 @@ contract Borrowing is Lending {
         }
         // emit event
         emit BorrowedAmountRepaid(msg.sender, onBehalfOf, tokenToPayBack, amountToPayBack);
-    }
-
-    function increaseAmountOfTokenBorrowed(address user, address token, uint256 amount) private {
-        s_TokenAmountsBorrowed[user][token] += amount;
-    }
-
-    function decreaseAmountOfTokenBorrowed(address user, address token, uint256 amount) private {
-        s_TokenAmountsBorrowed[user][token] -= amount;
     }
 
     function _getTotalCollateralOfToken(address token) private view returns (uint256 totalCollateral) {
@@ -130,7 +132,7 @@ contract Borrowing is Lending {
         uint256 totalCollateral = _getTotalCollateralOfToken(token);
 
         // Get total amount already borrowed of this token
-        uint256 totalBorrowed = _getTotalBorrowedOfToken(token);
+        uint256 totalBorrowed = _getTotalTokenAmountsBorrowed(token);
 
         // Available = Total Collateral - Total Borrowed
         return totalCollateral - totalBorrowed;
@@ -138,44 +140,5 @@ contract Borrowing is Lending {
 
     function getAvailableToBorrow(address token) external view returns (uint256) {
         return _getAvailableToBorrow(token);
-    }
-
-    /**
-     * @notice Retrieves the total amount of a specific token borrowed by the caller
-     * @dev Implements a secure token validation pattern before accessing borrowed amounts
-     * @param token The ERC20 token address to check borrowed amounts for
-     * @return uint256 The total amount borrowed of the specified token
-     *
-     * Security considerations:
-     * - Validates token is in allowed list before accessing state
-     * - Uses view function to prevent state modifications
-     * - Implements zero-address checks through allowed token validation
-     *
-     * Gas optimization:
-     * - Early return if token not in allowed list
-     * - Single state read for borrowed amount
-     * - Breaks loop early after token validation
-     *
-     * Example:
-     * ```
-     * address WETH = 0x...;
-     * uint256 borrowed = getTotalBorrowedOfToken(WETH);
-     * // Returns: 5e18 (5 WETH borrowed)
-     * ```
-     */
-    function _getTotalBorrowedOfToken(address token) private view returns (uint256) {
-        uint256 totalBorrowed = 0;
-        for (uint256 i = 0; i < _getAllowedTokens().length; i++) {
-            if (_getAllowedTokens()[i] == token) {
-                // Use contract address to track total borrowed
-                totalBorrowed = _getAmountOfTokenBorrowed(address(this), token);
-                break;
-            }
-        }
-        return totalBorrowed;
-    }
-
-    function getTotalBorrowedOfToken(address token) external view returns (uint256) {
-        return _getTotalBorrowedOfToken(token);
     }
 }
