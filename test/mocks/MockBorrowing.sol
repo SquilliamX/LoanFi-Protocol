@@ -18,7 +18,7 @@ contract MockBorrowing is ERC20Burnable, Ownable {
         _borrowFunds(tokenToBorrow, amountToBorrow);
     }
 
-    function paybackBorrowedAmount(address tokenToPayBack, uint256 amountToPayBack, address onBehalfOf) public {
+    function paybackBorrowedAmount(address tokenToPayBack, uint256 amountToPayBack, address onBehalfOf) public view {
         _paybackBorrowedAmount(tokenToPayBack, amountToPayBack, onBehalfOf);
     }
 
