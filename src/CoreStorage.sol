@@ -11,16 +11,19 @@ contract CoreStorage is ReentrancyGuard {
     // First key: user's address
     // Second key: token address they deposited
     // Value: amount of that token they have deposited
-    mapping(address user => mapping(address token => uint256 amount)) internal s_collateralDeposited;
+    mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
 
     // Track borrowed amounts per user per token
-    mapping(address user => mapping(address token => uint256 amount)) internal s_TokenAmountsBorrowed;
+    mapping(address user => mapping(address token => uint256 amount)) private s_TokenAmountsBorrowed;
 
     // maps token address to pricefeed addresses
     mapping(address token => address priceFeed) private s_priceFeeds;
 
+    // Track total borrowed amounts per token
+    mapping(address token => uint256 amount) private s_TotalTokenAmountsBorrowed;
+
     // an array of all the collateral & Borrowing tokens users can use.
-    address[] internal s_AllowedTokens;
+    address[] private s_AllowedTokens;
 
     ///////////////////////////////
     //      State Variables      //
@@ -260,5 +263,39 @@ contract CoreStorage is ReentrancyGuard {
 
     function _getAmountOfTokenBorrowed(address user, address token) internal view returns (uint256) {
         return s_TokenAmountsBorrowed[user][token];
+    }
+
+    function increaseAmountOfTokenBorrowed(address user, address token, uint256 amount) private {
+        s_TokenAmountsBorrowed[user][token] += amount;
+    }
+
+    function decreaseAmountOfTokenBorrowed(address user, address token, uint256 amount) private {
+        s_TokenAmountsBorrowed[user][token] -= amount;
+    }
+
+    function getTotalTokenAmountsBorrowed(address token) external view returns (uint256) {
+        return _getTotalTokenAmountsBorrowed(token);
+    }
+
+    function _getTotalTokenAmountsBorrowed(address token) internal view returns (uint256) {
+        return s_TotalTokenAmountsBorrowed[token];
+    }
+
+    function increaseTotalTokenAmountsBorrowed(address token, uint256 amount) private {
+        s_TotalTokenAmountsBorrowed[token] += amount;
+    }
+
+    function decreaseTotalTokenAmountsBorrowed(address token, uint256 amount) private {
+        s_TotalTokenAmountsBorrowed[token] -= amount;
+    }
+
+    function increaseUserDebtAndTotalDebtBorrowed(address user, address token, uint256 amount) internal {
+        increaseAmountOfTokenBorrowed(user, token, amount);
+        increaseTotalTokenAmountsBorrowed(token, amount);
+    }
+
+    function decreaseUserDebtAndTotalDebtBorrowed(address user, address token, uint256 amount) internal {
+        decreaseAmountOfTokenBorrowed(user, token, amount);
+        decreaseTotalTokenAmountsBorrowed(token, amount);
     }
 }
