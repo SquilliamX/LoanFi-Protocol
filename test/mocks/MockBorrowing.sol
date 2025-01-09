@@ -30,14 +30,14 @@ contract MockBorrowing is ERC20Burnable, Ownable {
         }
     }
 
-    function _paybackBorrowedAmount(address tokenToPayBack, uint256 amountToPayBack, address onBehalfOf) private {
+    function _paybackBorrowedAmount(address tokenToPayBack, uint256 amountToPayBack, address onBehalfOf) private view {
         // if the address being paid on behalf of is the 0 address, revert
         if (onBehalfOf == address(0)) {
             revert Errors.Borrowing__ZeroAddressNotAllowed();
         }
 
         // Transfer tokens from user to contract
-        bool success = IERC20(tokenToPayBack).transferFrom(msg.sender, address(this), amountToPayBack);
+        bool success = transferFrom(msg.sender, address(this), tokenToPayBack, amountToPayBack);
 
         // Check if transfer was successful
         // This is a backup check since transferFrom would normally revert on failure
@@ -47,6 +47,24 @@ contract MockBorrowing is ERC20Burnable, Ownable {
     }
 
     function transfer(address, /* receiver */ uint256, /* amount */ address /* token*/ ) public pure returns (bool) {
+        return false;
+    }
+
+    /**
+     * @notice Mock transferFrom function that always fails
+     * @return false Always returns false to simulate transferFrom failure
+     */
+    function transferFrom(
+        address, /*sender*/
+        address, /*recipient*/
+        address, /* token */
+        uint256 /*amount*/
+    )
+        public
+        pure
+        returns (bool)
+    {
+        // Always return false to simulate transferFrom failure
         return false;
     }
 
