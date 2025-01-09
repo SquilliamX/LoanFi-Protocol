@@ -241,7 +241,7 @@ contract LoanFi_IntegrationsTest is Test {
     modifier UserDepositedAndBorrowedLink() {
         // Start impersonating the test user
         vm.startPrank(user);
-        // Approve the DSCEngine contract to spend user's WETH
+        // Approve the loanFi contract to spend user's WETH
         // User deposits $10,000
         ERC20Mock(weth).approve(address(loanFi), DEPOSIT_AMOUNT);
 
@@ -385,6 +385,26 @@ contract LoanFi_IntegrationsTest is Test {
         (uint256 healthFactor) = loanFi.calculateHealthFactor(totalAmountBorrowed, depositAmountInUsd);
         // assert the values
         assertEq(healthFactor, expectedHealthFactor);
+    }
+
+    // Tests that the health factor can go below 1 when collateral value drops
+    function testHealthFactorCanGoBelowOne() public UserDepositedAndBorrowedLink {
+        // Set new ETH price to $18 (significant drop from original price)
+        int256 wethUsdUpdatedPrice = 18e8; // 1 ETH = $18
+
+        // we need $200 at all times if we have $100 of debt
+        // Update the ETH/USD price feed with new lower price
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(wethUsdUpdatedPrice);
+
+        // Get user's new health factor after price drop
+        uint256 userHealthFactor = loanFi.getHealthFactor(user);
+
+        // Health factor calculation explanation:
+        // 180 (ETH price) * 50 (LIQUIDATION_THRESHOLD) / 100 (LIQUIDATION_PRECISION)
+        // / 100 (PRECISION) = 90 / 100 (totalAmountBorrowed) = 0.9
+
+        // Verify health factor is now below 1 (0.45)
+        assertEq(userHealthFactor, 45e16); // 0.45 ether
     }
 
     ///////////////////////////
@@ -616,7 +636,7 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Start impersonating the test user
         vm.startPrank(otherUser);
-        // Approve the DSCEngine contract to spend user's WETH
+        // Approve the loanFi contract to spend user's WETH
         // User deposits $10,000
         ERC20Mock(weth).approve(address(loanFi), DEPOSIT_AMOUNT);
 
@@ -645,7 +665,7 @@ contract LoanFi_IntegrationsTest is Test {
         uint256 userLinkBalanceBefore = ERC20Mock(link).balanceOf(user);
         // Start impersonating the test user
         vm.startPrank(user);
-        // Approve the DSCEngine contract to spend user's WETH
+        // Approve the loanFi contract to spend user's WETH
         // User deposits $10,000
         ERC20Mock(weth).approve(address(loanFi), DEPOSIT_AMOUNT);
 
@@ -695,7 +715,7 @@ contract LoanFi_IntegrationsTest is Test {
         // Approve LoanFi to spend user's tokens
         mockBorrowing.approve(address(mockLoanFi), DEPOSIT_AMOUNT);
 
-        // Attempt to deposit collateral (this should fail)
+        // deposit collateral
         mockLoanFi.depositCollateral(address(mockBorrowing), DEPOSIT_AMOUNT);
 
         // Expect the transaction to revert with TransferFailed error
@@ -774,6 +794,164 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Stop impersonating the user
         vm.stopPrank();
+    }
+
+    function testBorrowedAmountMappingDecreasesWhenUserPayDebts() public UserDepositedAndBorrowedLink {
+        uint256 amountBorrowed = loanFi.getAmountOfTokenBorrowed(user, link);
+
+        vm.startPrank(user);
+        ERC20Mock(link).approve(address(loanFi), LINK_AMOUNT_TO_BORROW);
+
+        loanFi.paybackBorrowedAmount(link, LINK_AMOUNT_TO_BORROW, user);
+        vm.stopPrank();
+
+        uint256 amountBorrowedAfterDebtPaid = loanFi.getAmountOfTokenBorrowed(user, link);
+
+        assert(amountBorrowed > amountBorrowedAfterDebtPaid);
+        assertEq(amountBorrowedAfterDebtPaid, 0);
+    }
+
+    function testHealthFactorImprovesAfterRepayment() public UserDepositedAndBorrowedLink {
+        uint256 healthFactorWhileBorrowing = loanFi.getHealthFactor(user);
+
+        vm.startPrank(user);
+        ERC20Mock(link).approve(address(loanFi), LINK_AMOUNT_TO_BORROW);
+
+        loanFi.paybackBorrowedAmount(link, LINK_AMOUNT_TO_BORROW, user);
+        vm.stopPrank();
+
+        uint256 healthFactorAfterRepayment = loanFi.getHealthFactor(user);
+
+        uint256 perfectHealthScoreAfterRepayment = type(uint256).max;
+
+        assert(healthFactorWhileBorrowing < healthFactorAfterRepayment);
+        assertEq(healthFactorAfterRepayment, perfectHealthScoreAfterRepayment);
+    }
+
+    function testUserCanRepayAPortionOfDebtInsteadOfFullDebt() public UserDepositedAndBorrowedLink {
+        uint256 amountBorrowedBeforeRepayment = loanFi.getAmountOfTokenBorrowed(user, link);
+        uint256 smallRepayment = 4e18;
+        vm.startPrank(user);
+        ERC20Mock(link).approve(address(loanFi), smallRepayment);
+
+        loanFi.paybackBorrowedAmount(link, smallRepayment, user);
+        vm.stopPrank();
+
+        uint256 amountBorrowedAfterRepayment = loanFi.getAmountOfTokenBorrowed(user, link);
+        uint256 expectedDebtLeft = 6e18;
+
+        assert(amountBorrowedBeforeRepayment > amountBorrowedAfterRepayment);
+        assertEq(amountBorrowedBeforeRepayment - smallRepayment, expectedDebtLeft);
+    }
+
+    function testUsersHealthFactorImprovesAfterPartialRepayment() public UserDepositedAndBorrowedLink {
+        uint256 healthFactorBeforeRepayment = loanFi.getHealthFactor(user);
+        uint256 smallRepayment = 5e18;
+        vm.startPrank(user);
+        ERC20Mock(link).approve(address(loanFi), smallRepayment);
+
+        loanFi.paybackBorrowedAmount(link, smallRepayment, user);
+        vm.stopPrank();
+        uint256 healthFactorAfterRepayment = loanFi.getHealthFactor(user);
+
+        uint256 expectedHealthFactor = 100e18;
+
+        assert(healthFactorBeforeRepayment < healthFactorAfterRepayment);
+        assertEq(healthFactorAfterRepayment, expectedHealthFactor);
+    }
+
+    function testOtherUsersCanRepayOnHalfOfOthers() public UserDepositedAndBorrowedLink {
+        uint256 amountToRepay = 10e18;
+        // Setup: User2 who will attempt the repayment
+        address user2 = makeAddr("user2");
+        vm.startPrank(user2);
+
+        ERC20Mock(link).mint(user2, 100e18);
+        ERC20Mock(link).approve(address(loanFi), amountToRepay);
+
+        loanFi.paybackBorrowedAmount(link, amountToRepay, user);
+
+        vm.stopPrank();
+
+        assertEq(loanFi.getAmountOfTokenBorrowed(user, link), 0);
+    }
+
+    function testRevertsIfUsersRepaymentFails() public {
+        uint256 amountToRepay = 10e18;
+
+        // Setup - Get the owner's address (msg.sender in this context)
+        address owner = msg.sender;
+
+        // Create new mock token contract that will fail transfers, deployed by owner
+        vm.prank(owner);
+        MockBorrowing mockBorrowing = new MockBorrowing();
+
+        // Setup array with mock token as only allowed collateral
+        tokenAddresses = [address(mockBorrowing)];
+        // Setup array with WETH price feed for the mock token
+        feedAddresses = [wethUsdPriceFeed];
+
+        // Deploy new LoanFi instance with mock token as allowed collateral
+        vm.prank(owner);
+        LoanFi mockLoanFi = new LoanFi(tokenAddresses, feedAddresses);
+
+        // Mint some mock tokens to our test user
+        mockBorrowing.mint(user, DEPOSIT_AMOUNT);
+
+        // Transfer ownership of mock token to LoanFi
+        vm.prank(owner);
+        mockBorrowing.transferOwnership(address(mockLoanFi));
+
+        // Start impersonating our test user
+        vm.startPrank(user);
+        // Approve LoanFi to spend user's tokens
+        mockBorrowing.approve(address(mockLoanFi), DEPOSIT_AMOUNT);
+
+        // deposit collateral
+        mockLoanFi.depositCollateral(address(mockBorrowing), DEPOSIT_AMOUNT);
+
+        // Try to borrow the mock token
+        mockLoanFi.borrowFunds(address(mockBorrowing), WETH_AMOUNT_TO_BORROW);
+
+        // Expect the transaction to revert with TransferFailed error
+        vm.expectRevert(Errors.Borrowing__TransferFailed.selector);
+        mockBorrowing.paybackBorrowedAmount(address(mockBorrowing), amountToRepay, user);
+
+        vm.stopPrank();
+    }
+
+    function testRepaymentEmitsEvent() public UserDepositedAndBorrowedLink {
+        uint256 amountToRepay = 10e18;
+        vm.startPrank(user);
+        ERC20Mock(link).approve(address(loanFi), amountToRepay);
+
+        vm.expectEmit(true, true, true, true, address(loanFi));
+        emit BorrowedAmountRepaid(user, user, link, amountToRepay);
+
+        loanFi.paybackBorrowedAmount(link, amountToRepay, user);
+        vm.stopPrank();
+    }
+
+    function testGetTotalCollateralOfToken() public view {
+        uint256 expectedCollateralAmount = 10e18;
+
+        uint256 actualCollateralAmount = loanFi.getTotalCollateralOfToken(link);
+
+        assertEq(actualCollateralAmount, expectedCollateralAmount);
+    }
+
+    function testGetAvailableToBorrow() public view {
+        uint256 expectedCollateral = 10e18;
+        uint256 actualCollateral = loanFi.getAvailableToBorrow(link);
+
+        assertEq(actualCollateral, expectedCollateral);
+    }
+
+    function testGetTotalBorrowedOfToken() public UserDepositedAndBorrowedLink {
+        uint256 expectedAmountOfBorrowedTokens = 10e18; 
+        uint256 actualAmountOfBorrowedTokens = loanFi.getTotalBorrowedOfToken(link);
+
+        assertEq(actualAmountOfBorrowedTokens, expectedAmountOfBorrowedTokens);
     }
 
     /////////////////////
