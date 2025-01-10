@@ -49,9 +49,9 @@ contract Liquidations is Withdraw {
 
     /* 
      * @notice Liquidates an unhealthy position
-     * @param collateral The collateral token address to liquidate
-     * @param user The user whose position is being liquidated
-     * @param debtAmountToPay The amount of debt to repay
+     * @param collateral: The collateral token address to liquidate
+     * @param user: The user whose position is being liquidated
+     * @param debtAmountToPay: The amount of debt to repay
      * @dev This function allows liquidators to repay some of a user's debt and  receive their collateral at a discount (bonus)
      * @dev In events of flash crashes and the user does not have enough collateral to incentivize liquidators, the protocol will liquidate users to cover the losses.
     */
@@ -62,9 +62,9 @@ contract Liquidations is Withdraw {
     /* 
      * @dev Orchestrates the entire liquidation process including validation, bonus calculation, and health factor checks
      * @dev Follows CEI (Checks-Effects-Interactions) pattern for reentrancy protection
-     * @param collateral The ERC20 token address being used as collateral
-     * @param user The address of the user whose position is being liquidated
-     * @param debtAmountToPay The amount of debt to be repaid in the liquidation
+     * @param collateral: The ERC20 token address being used as collateral
+     * @param user: The address of the user whose position is being liquidated
+     * @param debtAmountToPay: The amount of debt to be repaid in the liquidation
      */
     function _liquidate(
         address collateral,
@@ -243,7 +243,7 @@ contract Liquidations is Withdraw {
 
         // Verify user has actually borrowed the token being liquidated
         if (_getCollateralBalanceOfUser(user, collateral) == 0) {
-            revert Errors.Liquidations__UserHasNoCollateralDeposited();
+            revert Errors.UserHasNoCollateralDeposited();
         }
 
         // Verify liquidation amount isn't larger than borrowed amount
