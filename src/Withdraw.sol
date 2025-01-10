@@ -23,7 +23,7 @@ contract Withdraw is Borrowing {
         address tokenCollateralAddress,
         uint256 amountCollateralToWithdraw
     )
-        public
+        external
         nonReentrant
     {
         _withdrawCollateral(tokenCollateralAddress, amountCollateralToWithdraw, msg.sender, msg.sender);
@@ -40,15 +40,17 @@ contract Withdraw is Borrowing {
         moreThanZero(amountCollateralToWithdraw)
         isAllowedToken(tokenCollateralAddress)
     {
-        // Add zero address check
-        if (to == address(0) || from == address(0)) {
+        // zero address check
+        // we removed the zero address check for the `to` parameter to save gas as there is no way a user can set/change the `to` address
+        if (from == address(0)) {
             revert Errors.ZeroAddressNotAllowed();
         }
 
         // user must have funds deposited to withdraw
         if (_getCollateralBalanceOfUser(from, tokenCollateralAddress) == 0) {
-            revert Errors.Withdraw__UserHasCollateralDeposited();
+            revert Errors.UserHasNoCollateralDeposited();
         }
+
         // user can only withdraw up to the amount he deposited
         if (_getCollateralBalanceOfUser(from, tokenCollateralAddress) < amountCollateralToWithdraw) {
             revert Errors.Withdraw__UserDoesNotHaveThatManyTokens();
@@ -60,7 +62,7 @@ contract Withdraw is Borrowing {
         decreaseCollateralDeposited(from, tokenCollateralAddress, amountCollateralToWithdraw);
 
         // Emit event for off-chain tracking and transparency since we are updating state
-        emit CollateralWithdrawn(from, to, tokenCollateralAddress, amountCollateralToWithdraw);
+        emit CollateralWithdrawn(tokenCollateralAddress, amountCollateralToWithdraw, from, to);
 
         // Transfer the collateral tokens from this contract back to the user
         // Using ERC20's transfer instead of transferFrom since the tokens are already in this contract
