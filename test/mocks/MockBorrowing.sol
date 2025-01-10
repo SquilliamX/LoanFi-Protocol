@@ -26,14 +26,14 @@ contract MockBorrowing is ERC20Burnable, Ownable {
         // attempt to send borrowed amount to the msg.sender
         bool success = transfer(msg.sender, amountToBorrow, tokenToBorrow);
         if (!success) {
-            revert Errors.Borrowing__TransferFailed();
+            revert Errors.TransferFailed();
         }
     }
 
     function _paybackBorrowedAmount(address tokenToPayBack, uint256 amountToPayBack, address onBehalfOf) private view {
         // if the address being paid on behalf of is the 0 address, revert
         if (onBehalfOf == address(0)) {
-            revert Errors.Borrowing__ZeroAddressNotAllowed();
+            revert Errors.ZeroAddressNotAllowed();
         }
 
         // Transfer tokens from user to contract
@@ -42,7 +42,7 @@ contract MockBorrowing is ERC20Burnable, Ownable {
         // Check if transfer was successful
         // This is a backup check since transferFrom would normally revert on failure
         if (!success) {
-            revert Errors.Borrowing__TransferFailed();
+            revert Errors.TransferFailed();
         }
     }
 
