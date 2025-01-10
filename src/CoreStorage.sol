@@ -60,7 +60,9 @@ contract CoreStorage is ReentrancyGuard {
         address indexed payer, address indexed onBehalfOf, address indexed token, uint256 amount
     );
 
-    event CollateralWithdrawn(address indexed redeemedFrom, address redeemTo, address indexed token, uint256 amount);
+    event CollateralWithdrawn(address indexed WithdrawnFrom, address WithdrawTo, address indexed token, uint256 amount);
+
+    event UserLiquidated(address indexed collateral, address indexed userLiquidated, uint256 amountOfDebtPaid);
 
     ///////////////////
     //     Type     //
@@ -239,7 +241,9 @@ contract CoreStorage is ReentrancyGuard {
         return _getCollateralBalanceOfUser(user, token);
     }
 
-    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) external view returns (uint256) { }
+    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) external view returns (uint256) {
+        return _getTokenAmountFromUsd(token, usdAmountInWei);
+    }
 
     function _getTokenAmountFromUsd(address token, uint256 usdAmountInWei) internal view returns (uint256) {
         // Get the price feed for this token from our mapping
@@ -259,6 +263,10 @@ contract CoreStorage is ReentrancyGuard {
 
     function updateCollateralDeposited(address user, address tokenDeposited, uint256 amount) internal {
         s_collateralDeposited[user][tokenDeposited] += amount;
+    }
+
+    function decreaseCollateralDeposited(address user, address tokenDeposited, uint256 amount) internal {
+        s_collateralDeposited[user][tokenDeposited] -= amount;
     }
 
     function getAmountOfTokenBorrowed(address user, address token) external view returns (uint256) {
