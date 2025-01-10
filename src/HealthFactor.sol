@@ -127,8 +127,8 @@ contract HealthFactor is CoreStorage {
         pure
         returns (uint256)
     {
-        // If user hasn't borrowed any value, they have perfect health factor
-        if (totalAmountBorrowed == 0) return type(uint256).max;
+        // If user hasn't borrowed any value OR has no collateral, they have perfect health factor
+        if (totalAmountBorrowed == 0 || collateralValueInUsd == 0) return type(uint256).max;
 
         // Adjust collateral value by liquidation threshold
         // Example: $1000 ETH * 50/100 = $500 adjusted collateral
