@@ -50,19 +50,19 @@ contract Lending is HealthFactor {
         // 1. IERC20(tokenCollateralAddress): Cast the token address to tell Solidity it's an ERC20 token
         // 2. transferFrom parameters:
         //    - msg.sender: the user who is depositing collateral
-        //    - address(this): this Lending Engine contract receiving the collateral
+        //    - address(this): this Lending contract receiving the collateral
         //    - amountCollateral: how many tokens to transfer
         // 3. This transferFrom function that we are calling returns a bool: true if transfer succeeded, false if it
         // failed, so we capture the result
         bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateralSent);
         // This transferFrom will fail if there's no prior approval. The sequence must be:
-        // 1. User approves Lending Engine to spend their tokens
+        // 1. User approves Lending.sol to spend their tokens
         // 2. User calls depositCollateral
-        // 3. Lending Engine uses transferFrom to move the tokens
+        // 3. Lending.sol uses transferFrom to move the tokens
 
         // if it is not successful, then revert.
         if (!success) {
-            revert Errors.Lending__TransferFailed();
+            revert Errors.TransferFailed();
         }
     }
 }
