@@ -21,14 +21,12 @@ contract Withdraw is Borrowing {
 
     function withdrawCollateral(
         address tokenCollateralAddress,
-        uint256 amountCollateral
+        uint256 amountCollateralToWithdraw
     )
         public
-        moreThanZero(amountCollateral)
         nonReentrant
-        isAllowedToken(tokenCollateralAddress)
     {
-        _withdrawCollateral(tokenCollateralAddress, amountCollateral, msg.sender, msg.sender);
+        _withdrawCollateral(tokenCollateralAddress, amountCollateralToWithdraw, msg.sender, msg.sender);
         _revertIfHealthFactorIsBroken(msg.sender);
     }
 
@@ -39,7 +37,14 @@ contract Withdraw is Borrowing {
         address to
     )
         internal
+        moreThanZero(amountCollateralToWithdraw)
+        isAllowedToken(tokenCollateralAddress)
     {
+        // Add zero address check
+        if (to == address(0) || from == address(0)) {
+            revert Errors.ZeroAddressNotAllowed();
+        }
+
         // user must have funds deposited to withdraw
         if (_getCollateralBalanceOfUser(from, tokenCollateralAddress) == 0) {
             revert Errors.Withdraw__UserHasCollateralDeposited();
@@ -52,7 +57,7 @@ contract Withdraw is Borrowing {
 
         // Decrease the user's collateral balance in our internal accounting
         // This must happen before the transfer to prevent reentrancy attacks
-        decreaseUserDebtAndTotalDebtBorrowed(from, tokenCollateralAddress, amountCollateralToWithdraw);
+        decreaseCollateralDeposited(from, tokenCollateralAddress, amountCollateralToWithdraw);
 
         // Emit event for off-chain tracking and transparency since we are updating state
         emit CollateralWithdrawn(from, to, tokenCollateralAddress, amountCollateralToWithdraw);
