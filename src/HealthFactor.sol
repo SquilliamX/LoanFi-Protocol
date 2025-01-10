@@ -91,7 +91,7 @@ contract HealthFactor is CoreStorage {
      * Returns how close to liquidation a user is
      * If a user goes below 1, then they can get liquidated
      */
-    function _healthFactor(address user) private view returns (uint256) {
+    function _healthFactor(address user) internal view returns (uint256) {
         (uint256 totalAmountBorrowed, uint256 collateralValueInUsd) = _getAccountInformation(user);
         return _calculateHealthFactor(totalAmountBorrowed, collateralValueInUsd);
     }
