@@ -45,8 +45,7 @@ contract Borrowing is Lending {
 
         // 2. Protocol Accounting Check
         // Get how many tokens are available according to protocol's accounting
-        // This considers all existing loans and ensures we're not lending tokens
-        // that are already promised to other borrowers
+        // This considers all existing loans and ensures we're not lending tokens that are already promised to other borrowers
         uint256 availableToBorrow = _getAvailableToBorrow(tokenToBorrow);
         // if user is trying to borrow more than available, revert
         if (amountToBorrow > availableToBorrow) {
@@ -56,6 +55,9 @@ contract Borrowing is Lending {
         // Track the specific token amounts & USD amounts borrowed
         increaseUserDebtAndTotalDebtBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
 
+        // emit event when msg.sender borrows funds
+        emit UserBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
+
         // This will check if total borrowed exceeds collateral limits
         _revertIfHealthFactorIsBroken(msg.sender);
 
@@ -64,8 +66,6 @@ contract Borrowing is Lending {
         if (!success) {
             revert Errors.TransferFailed();
         }
-        // emit event when msg.sender borrows funds
-        emit UserBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
     }
 
     function _paybackBorrowedAmount(
@@ -79,7 +79,12 @@ contract Borrowing is Lending {
     {
         // if the address being paid on behalf of is the 0 address, revert
         if (onBehalfOf == address(0)) {
-            revert Errors.Borrowing__ZeroAddressNotAllowed();
+            revert Errors.ZeroAddressNotAllowed();
+        }
+
+        // Check if payer has enough tokens to pay the debt
+        if (IERC20(tokenToPayBack).balanceOf(msg.sender) < amountToPayBack) {
+            revert Errors.Borrowing__NotEnoughTokensToPayDebt();
         }
 
         // Safety check to prevent users from overpaying their debt
@@ -93,6 +98,9 @@ contract Borrowing is Lending {
         // This must happen first to prevent reentrancy attacks
         decreaseUserDebtAndTotalDebtBorrowed(onBehalfOf, tokenToPayBack, amountToPayBack);
 
+        // emit event
+        emit BorrowedAmountRepaid(msg.sender, onBehalfOf, tokenToPayBack, amountToPayBack);
+
         // Check health factor after repayment just in case
         _revertIfHealthFactorIsBroken(onBehalfOf);
 
@@ -104,8 +112,6 @@ contract Borrowing is Lending {
         if (!success) {
             revert Errors.TransferFailed();
         }
-        // emit event
-        emit BorrowedAmountRepaid(msg.sender, onBehalfOf, tokenToPayBack, amountToPayBack);
     }
 
     function _getTotalCollateralOfToken(address token) private view returns (uint256 totalCollateral) {
