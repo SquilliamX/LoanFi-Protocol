@@ -62,7 +62,7 @@ contract Borrowing is Lending {
         // attempt to send borrowed amount to the msg.sender
         bool success = IERC20(tokenToBorrow).transfer(msg.sender, amountToBorrow);
         if (!success) {
-            revert Errors.Borrowing__TransferFailed();
+            revert Errors.TransferFailed();
         }
         // emit event when msg.sender borrows funds
         emit UserBorrowed(msg.sender, tokenToBorrow, amountToBorrow);
@@ -102,7 +102,7 @@ contract Borrowing is Lending {
         // Check if transfer was successful
         // This is a backup check since transferFrom would normally revert on failure
         if (!success) {
-            revert Errors.Borrowing__TransferFailed();
+            revert Errors.TransferFailed();
         }
         // emit event
         emit BorrowedAmountRepaid(msg.sender, onBehalfOf, tokenToPayBack, amountToPayBack);
