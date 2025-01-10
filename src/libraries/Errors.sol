@@ -6,12 +6,10 @@ library Errors {
     //      Lending Errors      //
     ///////////////////////////////
     error Lending__YouNeedMoreFunds();
-    error Lending__TransferFailed();
 
     ///////////////////////////////
     //     Borrowing Errors     //
     ///////////////////////////////
-    error Borrowing__TransferFailed();
     error Borrowing__OverpaidDebt();
     error Borrowing__ZeroAddressNotAllowed();
     error Borrowing__NotEnoughAvailableCollateral();
@@ -31,4 +29,17 @@ library Errors {
     ///////////////////////////////
     error AmountNeedsMoreThanZero();
     error TokenNotAllowed(address token);
+    error TransferFailed();
+
+    ///////////////////////////////
+    //    Liquidation Errors    //
+    //////////////////////////////
+    error Liquidations__HealthFactorOk();
+    error Liquidations__HealthFactorNotImproved();
+
+    //////////////////////////////
+    //     Withdraw Errors     //
+    /////////////////////////////
+    error Withdraw__UserHasCollateralDeposited();
+    error Withdraw__UserDoesNotHaveThatManyTokens();
 }
