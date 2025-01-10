@@ -31,13 +31,13 @@ library Errors {
     error TokenNotAllowed(address token);
     error TransferFailed();
     error ZeroAddressNotAllowed();
+    error UserHasNoCollateralDeposited();
 
     ///////////////////////////////
     //    Liquidation Errors    //
     //////////////////////////////
     error Liquidations__HealthFactorOk();
     error Liquidations__HealthFactorNotImproved();
-    error Liquidations__UserHasNoCollateralDeposited();
     error Liquidations__InsufficientBalanceToLiquidate();
     error Liquidations__DebtAmountExceedsBorrowedAmount();
     error Liquidations__CantLiquidateSelf();
@@ -45,6 +45,5 @@ library Errors {
     //////////////////////////////
     //     Withdraw Errors     //
     /////////////////////////////
-    error Withdraw__UserHasCollateralDeposited();
     error Withdraw__UserDoesNotHaveThatManyTokens();
 }
