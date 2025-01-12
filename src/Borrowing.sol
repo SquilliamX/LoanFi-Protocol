@@ -73,7 +73,7 @@ contract Borrowing is Lending {
         uint256 amountToPayBack,
         address onBehalfOf
     )
-        private
+        internal
         moreThanZero(amountToPayBack)
         isAllowedToken(tokenToPayBack)
     {
