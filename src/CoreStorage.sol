@@ -25,6 +25,10 @@ contract CoreStorage is ReentrancyGuard {
     // an array of all the collateral & Borrowing tokens users can use.
     address[] private s_AllowedTokens;
 
+    address[] private s_users;
+
+    mapping(address userAddress => bool hasDepositedCollateral) private s_userHasDepositedCollateral;
+
     ///////////////////////////////
     //      State Variables      //
     ///////////////////////////////
@@ -115,6 +119,44 @@ contract CoreStorage is ReentrancyGuard {
             // push all the tokens into our tokens array/list
             s_AllowedTokens.push(tokenAddresses[i]);
         }
+    }
+
+    // track users when they deposit collateral
+    function _addUser(address user) internal {
+        if (!s_userHasDepositedCollateral[user]) {
+            s_users.push(user);
+            s_userHasDepositedCollateral[user] = true;
+        }
+    }
+
+    function getUserBatch(
+        uint256 batchSize,
+        uint256 offset
+    )
+        external
+        view
+        returns (address[] memory users, uint256 totalUsers)
+    {
+        require(batchSize <= 100, "Batch size too large"); // Limit maximum batch size
+
+        uint256 length = s_users.length;
+        if (offset >= length) {
+            return (new address[](0), length);
+        }
+
+        uint256 endIndex = offset + batchSize;
+        if (endIndex > length) {
+            endIndex = length;
+        }
+
+        uint256 batchLength = endIndex - offset;
+        users = new address[](batchLength);
+
+        for (uint256 i = 0; i < batchLength; i++) {
+            users[i] = s_users[offset + i];
+        }
+
+        return (users, length);
     }
 
     function getUsdValue(
