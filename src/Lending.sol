@@ -43,6 +43,7 @@ contract Lending is HealthFactor {
         // we update state here, so when we update state, we must emit an event.
         // updates the user's balance in our tracking/mapping system by adding their new deposit amount to their existing balance for the specific collateral token they deposited
         updateCollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateralSent);
+        _addUser(msg.sender);
 
         // emit the event of the state update
         emit CollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateralSent);
