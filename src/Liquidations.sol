@@ -21,6 +21,8 @@ contract Liquidations is Withdraw {
         uint256 bonusFromOtherCollateral;
         /// Amount of debt being repaid through liquidation
         uint256 debtAmountToPay;
+        /// The token that was borrowed and needs to be repaid
+        address debtToken;
     }
 
     /*
@@ -30,13 +32,15 @@ contract Liquidations is Withdraw {
     struct TransferParams {
         /// The collateral token address being transferred
         address collateral;
+        /// The token that was borrowed and needs to be repaid
+        address debtToken;
         /// The address of the user whose collateral is being transferred
         address user;
-        /// The address receiving the liquidated collateral (liquidator or protocol)
+        /// The address receiving the liquidated collateral
         address recipient;
         /// Amount of debt being repaid
         uint256 debtAmountToPay;
-        /// Total amount of collateral being seized (debt + bonus)
+        /// Total amount of collateral being seized
         uint256 totalCollateralToSeize;
     }
 
@@ -50,33 +54,45 @@ contract Liquidations is Withdraw {
     /* 
      * @notice Liquidates an unhealthy position
      * @param collateral: The collateral token address to liquidate
+     * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The user whose position is being liquidated
      * @param debtAmountToPay: The amount of debt to repay
-     * @dev This function allows liquidators to repay some of a user's debt and  receive their collateral at a discount (bonus)
+     * @dev This function allows liquidators to repay some of a user's debt and receive their collateral at a discount (bonus)
      * @dev In events of flash crashes and the user does not have enough collateral to incentivize liquidators, the protocol will liquidate users to cover the losses.
     */
-    function liquidate(address collateral, address user, uint256 debtAmountToPay) external nonReentrant {
-        _liquidate(collateral, user, debtAmountToPay);
+    function liquidate(
+        address collateral,
+        address debtToken,
+        address user,
+        uint256 debtAmountToPay
+    )
+        external
+        nonReentrant
+    {
+        _liquidate(collateral, debtToken, user, debtAmountToPay);
     }
 
     /* 
      * @dev Orchestrates the entire liquidation process including validation, bonus calculation, and health factor checks
      * @dev Follows CEI (Checks-Effects-Interactions) pattern for reentrancy protection
      * @param collateral: The ERC20 token address being used as collateral
+     * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The address of the user whose position is being liquidated
      * @param debtAmountToPay: The amount of debt to be repaid in the liquidation
      */
     function _liquidate(
         address collateral,
+        address debtToken,
         address user,
         uint256 debtAmountToPay
     )
         private
-        isAllowedToken(collateral)
         moreThanZero(debtAmountToPay)
+        isAllowedToken(collateral)
+        isAllowedToken(debtToken)
     {
         // First do all validation checks
-        _validateLiquidation(collateral, user, debtAmountToPay);
+        _validateLiquidation(collateral, debtToken, user, debtAmountToPay);
 
         // Get the user's initial health factor to:
         // 1. Verify they can be liquidated (health factor < MIN_HEALTH_FACTOR)
@@ -87,7 +103,7 @@ contract Liquidations is Withdraw {
         }
 
         // Handle bonus calculation and transfers (liquidate user and reward liquidator)
-        _handleLiquidation(collateral, user, debtAmountToPay);
+        _handleLiquidation(collateral, debtToken, user, debtAmountToPay);
 
         // Verify health factors after liquidation
         _verifyHealthFactorAfterLiquidation(user, startingUserHealthFactor);
@@ -103,20 +119,21 @@ contract Liquidations is Withdraw {
      *      3. Performs transfers (interactions)
      * @dev This function is called by _liquidate after all validation checks pass
      * @param collateral: The ERC20 token address being liquidated
+     * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The address of the user whose position is being liquidated
      * @param debtAmountToPay: The amount of debt being repaid through liquidation
     */
-    function _handleLiquidation(address collateral, address user, uint256 debtAmountToPay) private {
+    function _handleLiquidation(address collateral, address debtToken, address user, uint256 debtAmountToPay) private {
         // Calculate and return the bonus
         (uint256 bonusFromThisCollateral, uint256 bonusFromOtherCollateral) =
-            _calculateBonuses(collateral, user, debtAmountToPay);
+            _calculateBonuses(collateral, debtToken, user, debtAmountToPay);
 
         // emit event before external interactions
         emit UserLiquidated(collateral, user, debtAmountToPay);
 
         // Handle distribution and transfers (liquidate user and reward liquidator)
         _handleDistributionAndTransfers(
-            collateral, user, debtAmountToPay, bonusFromThisCollateral, bonusFromOtherCollateral
+            collateral, debtToken, user, debtAmountToPay, bonusFromThisCollateral, bonusFromOtherCollateral
         );
     }
 
@@ -130,6 +147,7 @@ contract Liquidations is Withdraw {
      *      - First tries to get bonus from the collateral being liquidated
      *      - Then collects remaining bonus needed from other collateral proportionally
      * @param collateral: The ERC20 token address being liquidated
+     * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The address of the user being liquidated
      * @param debtAmountToPay: The amount of debt being repaid through liquidation
      * @return bonusFromThisCollateral: The bonus amount collected from the liquidated collateral
@@ -137,6 +155,7 @@ contract Liquidations is Withdraw {
      */
     function _calculateBonuses(
         address collateral,
+        address debtToken,
         address user,
         uint256 debtAmountToPay
     )
@@ -144,8 +163,7 @@ contract Liquidations is Withdraw {
         returns (uint256 bonusFromThisCollateral, uint256 bonusFromOtherCollateral)
     {
         // gets the usd value of the amount the liquidator is paying
-        uint256 debtInUsd = _getUsdValue(collateral, debtAmountToPay);
-
+        uint256 debtInUsd = _getUsdValue(debtToken, debtAmountToPay);
         // gets the collateral balance of the user of this specific token
         uint256 userCollateralBalance = _getCollateralBalanceOfUser(user, collateral);
 
@@ -175,6 +193,7 @@ contract Liquidations is Withdraw {
      *      - BonusParams: Groups bonus calculation parameters
      *      - TransferParams: Groups transfer execution parameters
      * @param collateral: The ERC20 token address being liquidated
+     * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The address of the user being liquidated
      * @param debtAmountToPay: The amount of debt being repaid
      * @param bonusFromThisCollateral: Bonus amount from the liquidated collateral
@@ -186,6 +205,7 @@ contract Liquidations is Withdraw {
      */
     function _handleDistributionAndTransfers(
         address collateral,
+        address debtToken,
         address user,
         uint256 debtAmountToPay,
         uint256 bonusFromThisCollateral,
@@ -199,7 +219,8 @@ contract Liquidations is Withdraw {
             user: user,
             bonusFromThisCollateral: bonusFromThisCollateral,
             bonusFromOtherCollateral: bonusFromOtherCollateral,
-            debtAmountToPay: debtAmountToPay
+            debtAmountToPay: debtAmountToPay,
+            debtToken: debtToken
         });
 
         // return the liquidator's address and the amount of collateral the liquidator should be rewarded
@@ -208,6 +229,7 @@ contract Liquidations is Withdraw {
         // initialize
         TransferParams memory transferParams = TransferParams({
             collateral: collateral,
+            debtToken: debtToken,
             user: user,
             recipient: recipient,
             debtAmountToPay: debtAmountToPay,
@@ -227,10 +249,19 @@ contract Liquidations is Withdraw {
      *      4. Balance verification (liquidator's token balance)
      * @dev Reverts early if any check fails to save gas
      * @param collateral: The ERC20 token address being used as collateral
+     * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The address of the user being liquidated
      * @param debtAmountToPay: The amount of debt to be repaid
      */
-    function _validateLiquidation(address collateral, address user, uint256 debtAmountToPay) private view {
+    function _validateLiquidation(
+        address collateral,
+        address debtToken,
+        address user,
+        uint256 debtAmountToPay
+    )
+        private
+        view
+    {
         // Check for zero address
         if (user == address(0)) {
             revert Errors.ZeroAddressNotAllowed();
@@ -241,18 +272,18 @@ contract Liquidations is Withdraw {
             revert Errors.Liquidations__CantLiquidateSelf();
         }
 
-        // Verify user has actually borrowed the token being liquidated
+        // Verify user has actually deposited the token being liquidated
         if (_getCollateralBalanceOfUser(user, collateral) == 0) {
             revert Errors.UserHasNoCollateralDeposited();
         }
 
-        // Verify liquidation amount isn't larger than borrowed amount
-        if (debtAmountToPay > _getAmountOfTokenBorrowed(user, collateral)) {
+        // Verify the amount being repaid isn't more than user's debt in this token
+        if (debtAmountToPay > _getAmountOfTokenBorrowed(user, debtToken)) {
             revert Errors.Liquidations__DebtAmountExceedsBorrowedAmount();
         }
 
-        // Verify liquidator has enough tokens to repay the debt
-        if (IERC20(collateral).balanceOf(msg.sender) < debtAmountToPay) {
+        // Verify liquidator has enough debt tokens to repay the debt
+        if (IERC20(debtToken).balanceOf(msg.sender) < debtAmountToPay) {
             revert Errors.Liquidations__InsufficientBalanceToLiquidate();
         }
     }
@@ -310,16 +341,20 @@ contract Liquidations is Withdraw {
         // gets the token amount of the bonus USD amount
         uint256 bonusCollateral = _getTokenAmountFromUsd(params.collateral, params.bonusFromThisCollateral);
 
+        // Convert debt amount to collateral terms
+        uint256 debtInUsd = _getUsdValue(params.debtToken, params.debtAmountToPay);
+        uint256 debtInCollateralTerms = _getTokenAmountFromUsd(params.collateral, debtInUsd);
+
+        // adds the debt amount (in collateral terms) and the bonus
+        totalCollateralToSeize = debtInCollateralTerms + bonusCollateral;
+
         // adds the bonus amount from one collateral and bonus amount from other collaterals
         uint256 totalBonusAvailable = params.bonusFromThisCollateral + params.bonusFromOtherCollateral;
 
         // gets the usd value of the bonus needed
         uint256 totalBonusNeededInUsd = (
-            _getUsdValue(params.collateral, params.debtAmountToPay) * _getLiquidationBonus()
+            _getUsdValue(params.debtToken, params.debtAmountToPay) * _getLiquidationBonus()
         ) / _getLiquidationPrecision();
-
-        // adds the debt amount the liquidator paid and the bonus
-        totalCollateralToSeize = params.debtAmountToPay + bonusCollateral;
 
         // determine who is doing the liquidating (liquidator or protocol)
         recipient = _determineRecipient(totalBonusAvailable, totalBonusNeededInUsd);
@@ -333,16 +368,22 @@ contract Liquidations is Withdraw {
      * @dev Performs two critical operations in sequence:
      *      1. Withdraws collateral from user to recipient (liquidator or protocol)
      *      2. Repays user's debt with liquidator's tokens
-     * @dev Follows strict ordering to maintain protocol safety:
-     *      - Collateral withdrawal must precede debt repayment
-     *      - Both operations must succeed or the entire transaction reverts
+     * @dev Follows strict ordering for security:
+     *      - Collateral withdrawal must precede debt repayment to prevent malicious liquidators from:
+     *        a) Paying the debt (improving health factor)
+     *        b) Using reentrancy to prevent collateral withdrawal
+     *        c) Getting debt repayment without giving up collateral
+     *      - This order ensures atomicity: either both transfers succeed or both fail
+     * @dev Follows CEI (Checks-Effects-Interactions) pattern:
+     *      1. State changes for collateral withdrawal
+     *      2. External calls for transfers
      */
     function _executeTransfers(TransferParams memory params) private {
-        // withdraw from user collateral
+        // First withdraw collateral to liquidator
         _withdrawCollateral(params.collateral, params.totalCollateralToSeize, params.user, params.recipient);
 
-        // payback the amount of debt owed by the liquidated
-        paybackBorrowedAmount(params.collateral, params.debtAmountToPay, params.user);
+        // Then repay user's debt with liquidator's debt tokens
+        paybackBorrowedAmount(params.debtToken, params.debtAmountToPay, params.user);
     }
 
     /*
