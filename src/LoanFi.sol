@@ -6,16 +6,17 @@ import { InterestRate } from "src/InterestRate.sol";
 contract LoanFi is InterestRate {
     constructor(
         address[] memory tokenAddresses,
-        address[] memory priceFeedAddresses
+        address[] memory priceFeedAddresses,
+        address swapRouter,
+        address automationRegistry,
+        uint256 upkeepId
     )
-        InterestRate(tokenAddresses, priceFeedAddresses)
+        InterestRate(tokenAddresses, priceFeedAddresses, swapRouter, automationRegistry, upkeepId)
     { }
 
     // Shared Functions
 
     // deposit and borrow
 
-    // payback and withdraw (should probaly be in borrow.sol)
-
-    //
+    // payback and withdraw
 }
