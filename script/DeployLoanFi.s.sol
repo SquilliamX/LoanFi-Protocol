@@ -4,14 +4,19 @@ pragma solidity ^0.8.20;
 import { Script } from "forge-std/Script.sol";
 import { HelperConfig } from "./HelperConfig.s.sol";
 import { LoanFi } from "src/LoanFi.sol";
+import { LiquidationAutomation } from "src/automation/LiquidationAutomation.sol";
 
 contract DeployLoanFi is Script {
     // Only deploy the final contract in the inheritance chain since the final contract in the inheritance chian inherits all functionality and contracts
     LoanFi public loanFi;
     HelperConfig public helperConfig;
+    LiquidationAutomation public liquidationAutomation;
 
     // deployerKey changes depending on which network we are on
     uint256 private s_deployerKey;
+    address private s_swapRouter;
+    address private s_automationRegistry;
+    uint256 private s_upkeepId;
 
     // Declaring Arrays to store allowed collateral token addresses and their corresponding price feeds
     address[] public tokenAddresses;
@@ -57,11 +62,17 @@ contract DeployLoanFi is Script {
             // link: LINK token address
             address link,
             // deployerKey: Private key for deployment depending on chain we deploy to
-            uint256 _deployerKey
+            uint256 _deployerKey,
+            address swapRouter,
+            address automationRegistry,
+            uint256 upkeepId
         ) = helperConfig.activeNetworkConfig();
 
         // set the private key from the helperConfig equal to the private key declared at contract level
         s_deployerKey = _deployerKey;
+        s_swapRouter = swapRouter;
+        s_automationRegistry = automationRegistry;
+        s_upkeepId = upkeepId;
 
         // Set up our arrays with the token addresses and their corresponding price feeds
         tokenAddresses = [weth, wbtc, link];
@@ -75,7 +86,8 @@ contract DeployLoanFi is Script {
      */
     function deployContracts() private {
         vm.startBroadcast(s_deployerKey);
-        loanFi = new LoanFi(tokenAddresses, priceFeedAddresses);
+        loanFi = new LoanFi(tokenAddresses, priceFeedAddresses, s_swapRouter, s_automationRegistry, s_upkeepId);
+        liquidationAutomation = new LiquidationAutomation(address(loanFi));
         vm.stopBroadcast();
     }
 }
