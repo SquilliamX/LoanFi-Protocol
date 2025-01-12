@@ -53,17 +53,17 @@ contract Liquidations is Withdraw {
 
     /* 
      * @notice Liquidates an unhealthy position
-     * @param collateral: The collateral token address to liquidate
+     * @param collateral: The liquidator can choose collateral token address he wants as a reward for liquidating the user. 
      * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The user whose position is being liquidated
      * @param debtAmountToPay: The amount of debt to repay
-     * @dev This function allows liquidators to repay some of a user's debt and receive their collateral at a discount (bonus)
-     * @dev In events of flash crashes and the user does not have enough collateral to incentivize liquidators, the protocol will liquidate users to cover the losses.
+     * @dev This function allows liquidators to repay some of a user's debt and receive their collateral at a discount (bonus).
+     * @dev In events of flash crashes and the user does not have enough of the collateral token that the liquidator chose as a reward, the protocol will split the reward from the user's other collateral types deposited, to incentivize liquidators. If the user still does not have enough collateral to incentivize liquidators, the protocol will liquidate users to cover the losses.
     */
     function liquidate(
+        address user,
         address collateral,
         address debtToken,
-        address user,
         uint256 debtAmountToPay
     )
         external
@@ -92,14 +92,14 @@ contract Liquidations is Withdraw {
         isAllowedToken(debtToken)
     {
         // First do all validation checks
-        _validateLiquidation(collateral, debtToken, user, debtAmountToPay);
+        _validateLiquidation(debtToken, user, debtAmountToPay);
 
         // Get the user's initial health factor to:
         // 1. Verify they can be liquidated (health factor < MIN_HEALTH_FACTOR)
         // 2. Compare with their final health factor after liquidation
         uint256 startingUserHealthFactor = _healthFactor(user);
         if (startingUserHealthFactor >= _getMinimumHealthFactor()) {
-            revert Errors.Liquidations__HealthFactorOk();
+            revert Errors.Liquidations__HealthFactorIsHealthy();
         }
 
         // Handle bonus calculation and transfers (liquidate user and reward liquidator)
@@ -118,7 +118,7 @@ contract Liquidations is Withdraw {
      *      2. Emits event (effect)
      *      3. Performs transfers (interactions)
      * @dev This function is called by _liquidate after all validation checks pass
-     * @param collateral: The ERC20 token address being liquidated
+     * @param collateral: The ERC20 token address being paid out to the liquidator
      * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The address of the user whose position is being liquidated
      * @param debtAmountToPay: The amount of debt being repaid through liquidation
@@ -146,7 +146,7 @@ contract Liquidations is Withdraw {
      * @dev This implements a "waterfall" bonus collection mechanism:
      *      - First tries to get bonus from the collateral being liquidated
      *      - Then collects remaining bonus needed from other collateral proportionally
-     * @param collateral: The ERC20 token address being liquidated
+     * @param collateral: The ERC20 token address being paid out to the liquidator
      * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The address of the user being liquidated
      * @param debtAmountToPay: The amount of debt being repaid through liquidation
@@ -245,23 +245,14 @@ contract Liquidations is Withdraw {
      * @dev Implements critical security checks in a specific order to minimize gas costs:
      *      1. Basic input validation (zero address)
      *      2. Access control (prevent self-liquidation)
-     *      3. State validation (collateral and debt checks)
+     *      3. State validation (debt checks)
      *      4. Balance verification (liquidator's token balance)
      * @dev Reverts early if any check fails to save gas
-     * @param collateral: The ERC20 token address being used as collateral
      * @param debtToken: The token that was borrowed and needs to be repaid
      * @param user: The address of the user being liquidated
      * @param debtAmountToPay: The amount of debt to be repaid
      */
-    function _validateLiquidation(
-        address collateral,
-        address debtToken,
-        address user,
-        uint256 debtAmountToPay
-    )
-        private
-        view
-    {
+    function _validateLiquidation(address debtToken, address user, uint256 debtAmountToPay) private view {
         // Check for zero address
         if (user == address(0)) {
             revert Errors.ZeroAddressNotAllowed();
@@ -272,14 +263,14 @@ contract Liquidations is Withdraw {
             revert Errors.Liquidations__CantLiquidateSelf();
         }
 
-        // Verify user has actually deposited the token being liquidated
-        if (_getCollateralBalanceOfUser(user, collateral) == 0) {
-            revert Errors.UserHasNoCollateralDeposited();
+        // Verify user has actually borrowed the token that needs to be repaid
+        if (_getAmountOfTokenBorrowed(user, debtToken) == 0) {
+            revert Errors.Liquidation__UserHasNotBorrowedToken();
         }
 
         // Verify the amount being repaid isn't more than user's debt in this token
         if (debtAmountToPay > _getAmountOfTokenBorrowed(user, debtToken)) {
-            revert Errors.Liquidations__DebtAmountExceedsBorrowedAmount();
+            revert Errors.Liquidations__DebtAmountPaidExceedsBorrowedAmount();
         }
 
         // Verify liquidator has enough debt tokens to repay the debt
@@ -383,7 +374,7 @@ contract Liquidations is Withdraw {
         _withdrawCollateral(params.collateral, params.totalCollateralToSeize, params.user, params.recipient);
 
         // Then repay user's debt with liquidator's debt tokens
-        paybackBorrowedAmount(params.debtToken, params.debtAmountToPay, params.user);
+        _paybackBorrowedAmount(params.debtToken, params.debtAmountToPay, params.user);
     }
 
     /*
