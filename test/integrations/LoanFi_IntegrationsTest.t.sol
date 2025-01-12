@@ -32,6 +32,9 @@ contract LoanFi_IntegrationsTest is Test {
     address public wbtc; // Wrapped BTC token address
     address public link; // LINK token address
     uint256 public deployerKey; // Private key of the deployer
+    address public swapRouter;
+    address public automationRegistry;
+    uint256 public upkeepId;
 
     uint256 public constant DEPOSIT_AMOUNT = 5 ether;
     uint256 public constant LINK_AMOUNT_TO_BORROW = 10e18; // $100 USD
@@ -74,8 +77,18 @@ contract LoanFi_IntegrationsTest is Test {
         // - WBTC token address
         // - LINK token address
         // - Deployer's private key
-        (wethUsdPriceFeed, btcUsdPriceFeed, linkUsdPriceFeed, weth, wbtc, link, deployerKey) =
-            helperConfig.activeNetworkConfig();
+         (
+            wethUsdPriceFeed,
+            btcUsdPriceFeed,
+            linkUsdPriceFeed,
+            weth,
+            wbtc,
+            link,
+            deployerKey,
+            swapRouter,
+            automationRegistry,
+            upkeepId
+        ) = helperConfig.activeNetworkConfig();
 
         // Set up token and price feed arrays
         tokenAddresses = [weth, wbtc, link];
@@ -583,7 +596,13 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Deploy new LoanFi instance with mock token as allowed collateral
         vm.prank(owner);
-        LoanFi mockLoanFi = new LoanFi(tokenAddresses, feedAddresses);
+        LoanFi mockLoanFi = new LoanFi(
+        tokenAddresses,
+        feedAddresses,
+        address(0), // Mock swap router
+        address(0), // Mock automation registry
+        0           // Mock upkeep ID
+    );
 
         // Mint some mock tokens to our test user
         mockDeposit.mint(user, DEPOSIT_AMOUNT);
@@ -782,7 +801,13 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Deploy new LoanFi instance with mock token as allowed collateral
         vm.prank(owner);
-        LoanFi mockLoanFi = new LoanFi(tokenAddresses, feedAddresses);
+        LoanFi mockLoanFi = new LoanFi(
+        tokenAddresses,
+        feedAddresses,
+        address(0), // Mock swap router
+        address(0), // Mock automation registry
+        0           // Mock upkeep ID
+    );
 
         // Mint some mock tokens to our test user
         mockBorrowing.mint(user, DEPOSIT_AMOUNT);
@@ -992,7 +1017,13 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Deploy new LoanFi instance with mock token as allowed collateral
         vm.prank(owner);
-        LoanFi mockLoanFi = new LoanFi(tokenAddresses, feedAddresses);
+        LoanFi mockLoanFi = new LoanFi(
+            tokenAddresses,
+            feedAddresses,
+            address(0), // Mock swap router
+            address(0), // Mock automation registry
+            0 // Mock upkeep ID
+        );
 
         // Mint some mock tokens to our test user
         mockBorrowing.mint(user, DEPOSIT_AMOUNT);
@@ -1210,7 +1241,13 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Deploy new LoanFi instance with mock token as allowed collateral
         vm.prank(owner);
-        LoanFi mockLoanFi = new LoanFi(tokenAddresses, feedAddresses);
+        LoanFi mockLoanFi = new LoanFi(
+        tokenAddresses,
+        feedAddresses,
+        address(0), // Mock swap router
+        address(0), // Mock automation registry
+        0           // Mock upkeep ID
+    );
 
         // Mint some mock tokens to our test user
         mockWithdraw.mint(user, DEPOSIT_AMOUNT);
@@ -1275,8 +1312,13 @@ contract LoanFi_IntegrationsTest is Test {
         testFeeds[1] = btcUsdPriceFeed;
         testFeeds[2] = linkUsdPriceFeed;
 
-        // Deploy new HealthFactor instance
-        Liquidations liquidations = new Liquidations(testTokens, testFeeds);
+        // Define the missing variables
+        address swapRouterAddress = makeAddr("swapRouter"); // or use a real address
+        
+
+        // Deploy new Liquidations instance
+        Liquidations liquidations =
+            new Liquidations(testTokens, testFeeds, swapRouterAddress, automationRegistry, upkeepId);
 
         // Verify initialization
         address[] memory allowedTokens = liquidations.getAllowedTokens();
@@ -1436,7 +1478,11 @@ contract LoanFi_IntegrationsTest is Test {
         _;
     }
 
-    function testLiquidationPaysLiquidatorBonusFromSelectedCollateral() public LiquidLoanFi UserCanBeLiquidatedWithBonus{
+    function testLiquidationPaysLiquidatorBonusFromSelectedCollateral()
+        public
+        LiquidLoanFi
+        UserCanBeLiquidatedWithBonus
+    {
         uint256 liquidatorBalanceBefore = ERC20Mock(weth).balanceOf(liquidator);
         uint256 expectedDebtAmountToPay = 100e18;
         uint256 expectedBonus = loanFi.getTokenAmountFromUsd(weth, loanFi.getUsdValue(link, 110e18));
@@ -1452,9 +1498,26 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(actualBonus, expectedBonus);
     }
 
-    function testLiquidationPaysLiquidatorBonusFromAllCollaterals() public { }
+    function testLiquidationPaysLiquidatorBonusFromAllCollaterals() public UserCanBeLiquidatedWithNoBonus {
+        uint256 liquidatorBalanceBefore = ERC20Mock(weth).balanceOf(liquidator);
+        uint256 expectedDebtAmountToPay = 100e18;
+        uint256 expectedBonus = loanFi.getTokenAmountFromUsd(weth, loanFi.getUsdValue(link, 110e18));
+        vm.startPrank(liquidator);
+        ERC20Mock(link).approve(address(loanFi), expectedDebtAmountToPay);
+        loanFi.liquidate(user, weth, link, expectedDebtAmountToPay);
+        vm.stopPrank();
+        uint256 liquidatorBalanceAfter = ERC20Mock(weth).balanceOf(liquidator);
 
-    function testLiquidationCompletedByProtocol() public { }
+        uint256 actualBonus = liquidatorBalanceAfter - liquidatorBalanceBefore;
+
+        assertEq(actualBonus, expectedBonus);
+    } // we are here
+
+    function testLiquidationCompletedByProtocolWithBonus() public { }
+
+    function testLiquidationCompletedByProtocolWithNoBonus() public { }
+
+    function testLiquidationByLiquidatorRevertsIfNoBonusAvailable() public { }
 
     function testLiquidationEmitsEvent() public { }
 
@@ -1489,6 +1552,8 @@ contract LoanFi_IntegrationsTest is Test {
         vm.stopPrank();
     }
 
+    function testIfBonusIsLessThanFivePercentProtocolAutomaticallyLiquidates() public { }
+
     //////////////////////////
     //  InterestRate Tests  //
     //////////////////////////
@@ -1506,7 +1571,13 @@ contract LoanFi_IntegrationsTest is Test {
         testFeeds[2] = linkUsdPriceFeed;
 
         // Deploy new HealthFactor instance
-        InterestRate interestRate = new InterestRate(testTokens, testFeeds);
+        InterestRate interestRate = new InterestRate(
+            testTokens,
+            testFeeds,
+            address(0), // Mock swap router
+            address(0), // Mock automation registry
+            0 // Mock upkeep ID
+        );
 
         // Verify initialization
         address[] memory allowedTokens = interestRate.getAllowedTokens();
