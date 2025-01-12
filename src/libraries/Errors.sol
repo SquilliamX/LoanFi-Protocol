@@ -41,6 +41,8 @@ library Errors {
     error Liquidations__CantLiquidateSelf();
     error Liquidations__DebtAmountPaidExceedsBorrowedAmount();
     error Liquidation__UserHasNotBorrowedToken();
+    error Liquidations__OnlyProtocolCanLiquidateInsufficientBonus();
+    error Liquidations__ProtocolLiquidationFailed();
 
     //////////////////////////////
     //     Withdraw Errors     //
