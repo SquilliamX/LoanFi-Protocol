@@ -16,6 +16,9 @@ contract HelperConfig is Script {
         address wbtc; // WBTC token address
         address link; // Link token address
         uint256 deployerKey; // Private key for deployment
+        address swapRouter; // Uniswap V3 Router
+        address automationRegistry; // Chainlink Automation Registry
+        uint256 upkeepId; // Chainlink Upkeep ID
     }
 
     // Constants for mock price feed configuration
@@ -51,7 +54,10 @@ contract HelperConfig is Script {
             weth: 0xdd13E55209Fd76AfE204dBda4007C227904f0a81, // WETH token on Sepolia
             wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063, // WBTC token on Sepolia
             link: 0x779877A7B0D9E8603169DdbD7836e478b4624789, // LINK token on Sepolia
-            deployerKey: vm.envUint("PRIVATE_KEY") // Get deployer key from .env file for testing purposes        })
+            deployerKey: vm.envUint("PRIVATE_KEY"), // Get deployer key from .env file for testing purposes
+            swapRouter: 0xb41b78Ce3D1BDEDE48A3d303eD2564F6d1F6fff0, // Uniswap swap router on Sepolia?
+            automationRegistry: 0xE16Df59B887e3Caa439E0b29B42bA2e7976FD8b2, // Chainlink Automation Registry on Sepolia?
+            upkeepId: vm.envUint("UPKEEP_ID") // Get from .env file after creating upkeep
          });
     }
 
@@ -85,7 +91,10 @@ contract HelperConfig is Script {
             weth: address(wethMock),
             wbtc: address(wbtcMock),
             link: address(linkMock),
-            deployerKey: DEFAULT_ANVIL_KEY
+            deployerKey: DEFAULT_ANVIL_KEY,
+            swapRouter: address(0),
+            automationRegistry: address(0),
+            upkeepId: 0
         });
     }
 }
