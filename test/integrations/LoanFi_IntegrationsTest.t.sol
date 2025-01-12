@@ -39,6 +39,7 @@ contract LoanFi_IntegrationsTest is Test {
     uint256 public constant WBTC_AMOUNT_TO_BORROW = 1e18; // $30,000 USD
 
     address public user = makeAddr("user"); // Address of the USER
+    address public liquidator = makeAddr("liquidator"); // Address of the liquidator
 
     uint256 public constant STARTING_USER_BALANCE = 10 ether; // Initial balance given to test users
 
@@ -90,6 +91,10 @@ contract LoanFi_IntegrationsTest is Test {
         ERC20Mock(weth).mint(user, STARTING_USER_BALANCE);
         ERC20Mock(wbtc).mint(user, STARTING_USER_BALANCE);
         ERC20Mock(link).mint(user, STARTING_USER_BALANCE);
+
+        ERC20Mock(weth).mint(liquidator, STARTING_USER_BALANCE);
+        ERC20Mock(wbtc).mint(liquidator, STARTING_USER_BALANCE);
+        ERC20Mock(link).mint(liquidator, STARTING_USER_BALANCE);
 
         ERC20Mock(weth).mint(address(loanFi), WETH_AMOUNT_TO_BORROW);
         ERC20Mock(wbtc).mint(address(loanFi), WBTC_AMOUNT_TO_BORROW);
@@ -1073,8 +1078,6 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(withdraw.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
     }
 
-
-
     modifier UserBorrowedAndRepaidDebt() {
         // Start impersonating the test user
         vm.startPrank(user);
@@ -1126,7 +1129,7 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Expect revert with TokenNotAllowed error when trying to borrow unapproved token
         vm.expectRevert(abi.encodeWithSelector(Errors.TokenNotAllowed.selector, address(dogToken)));
-        // Attempt to borrow unapproved token  (this should fail)
+        // Attempt to withdraw unapproved token  (this should fail)
         loanFi.withdrawCollateral(address(dogToken), DEPOSIT_AMOUNT);
 
         // Stop impersonating the user
@@ -1250,11 +1253,10 @@ contract LoanFi_IntegrationsTest is Test {
         // Stop impersonating the user
         vm.stopPrank();
 
-
         vm.startPrank(user);
-        vm.expectRevert(abi.encodeWithSelector(Errors.HealthFactor__BreaksHealthFactor.selector, expectedHealthFactor));        loanFi.withdrawCollateral(weth, thisWithdrawAmountBreaksHealthFactor);
+        vm.expectRevert(abi.encodeWithSelector(Errors.HealthFactor__BreaksHealthFactor.selector, expectedHealthFactor));
+        loanFi.withdrawCollateral(weth, thisWithdrawAmountBreaksHealthFactor);
         vm.stopPrank();
-        
     }
 
     /////////////////////////
@@ -1287,6 +1289,99 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(liquidations.getCollateralTokenPriceFeed(weth), wethUsdPriceFeed, "WETH price feed mismatch");
         assertEq(liquidations.getCollateralTokenPriceFeed(wbtc), btcUsdPriceFeed, "WBTC price feed mismatch");
         assertEq(liquidations.getCollateralTokenPriceFeed(link), linkUsdPriceFeed, "LINK price feed mismatch");
+    }
+
+    modifier UserCanBeLiquidated() {
+        // Start impersonating the test user
+        vm.startPrank(user);
+        // Approve the loanFi contract to spend user's WETH
+        // User deposits $10,000
+        ERC20Mock(weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+
+        loanFi.depositCollateral(weth, DEPOSIT_AMOUNT);
+
+        // Deposit collateral and borrow link in one transaction
+        // link is $10/token, user borrows 10, so thats $100 borrowed
+        loanFi.borrowFunds(link, LINK_AMOUNT_TO_BORROW);
+        // Stop impersonating the user
+        vm.stopPrank();
+
+        // Set new ETH price to $1000 (significant drop from original price)
+        int256 wethUsdUpdatedPrice = 190e8; // 1 ETH = $1000
+
+        // we need $200 of collateral at all times if we have $100 of debt
+        // Update the ETH/USD price feed with new lower price
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(wethUsdUpdatedPrice);
+
+        _;
+    }
+
+    function testLiquidationsRevertsIfAmountIsZero() public {
+        vm.prank(liquidator);
+        vm.expectRevert(Errors.AmountNeedsMoreThanZero.selector);
+        loanFi.liquidate(weth, user, 0);
+    }
+
+    function testLiquidationsRevertsIfTokenIsNotAllowed() public {
+        // Create a new random ERC20 token
+        ERC20Mock dogToken = new ERC20Mock("DOG", "DOG", user, 100e18);
+
+        // Start impersonating our test user
+        vm.startPrank(liquidator);
+
+        // Expect revert with TokenNotAllowed error when trying to borrow unapproved token
+        vm.expectRevert(abi.encodeWithSelector(Errors.TokenNotAllowed.selector, address(dogToken)));
+        // Attempt to liquidate user with unapproved token  (this should fail)
+        loanFi.liquidate(address(dogToken), user, DEPOSIT_AMOUNT);
+
+        // Stop impersonating the user
+        vm.stopPrank();
+    }
+
+    function testLiquidationRevertsIfUserIsZeroAddress() public {
+        vm.prank(liquidator);
+        vm.expectRevert(Errors.ZeroAddressNotAllowed.selector);
+        loanFi.liquidate(weth, address(0), DEPOSIT_AMOUNT);
+    }
+
+    function testLiquidationRevertsIfUserSelfLiquidates() public {
+        vm.prank(user);
+        vm.expectRevert(Errors.Liquidations__CantLiquidateSelf.selector);
+        loanFi.liquidate(weth, user, DEPOSIT_AMOUNT);
+    }
+
+    function testLiquidationRevertsIfUserHasNoCollateralDeposited() public {
+        vm.prank(liquidator);
+        vm.expectRevert(Errors.UserHasNoCollateralDeposited.selector);
+        loanFi.liquidate(weth, user, DEPOSIT_AMOUNT);
+    }
+
+    function testLiquidationRevertsIfDebtAmountPaidExceedsCollateralAmount() public UserCanBeLiquidated {
+        uint256 tooMuchToLiquidate = 20e18;
+        vm.prank(liquidator);
+        vm.expectRevert(Errors.Liquidations__PaymentExceedsCollateralBalance.selector);
+        loanFi.liquidate(weth, user, tooMuchToLiquidate);
+    }
+
+    function testLiquidationRevertsIfLiquidatorDoesNothaveEnoughTokens() public LiquidLoanFi {
+        uint256 tooMuchForLiquidator = 100e18;
+        // Start impersonating the test user
+        vm.startPrank(user);
+        // Approve the loanFi contract to spend user's WETH
+        // User deposits $10,000
+        ERC20Mock(weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+
+        loanFi.depositCollateral(weth, DEPOSIT_AMOUNT);
+
+        // Deposit collateral and borrow link in one transaction
+        // link is $10/token, user borrows 10, so thats $100 borrowed
+        loanFi.borrowFunds(link, tooMuchForLiquidator);
+        // Stop impersonating the user
+        vm.stopPrank();
+
+        vm.prank(liquidator);
+        vm.expectRevert(Errors.Liquidations__InsufficientBalanceToLiquidate.selector);
+        loanFi.liquidate(weth, user, tooMuchForLiquidator);
     }
 
     //////////////////////////
