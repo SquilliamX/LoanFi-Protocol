@@ -6,12 +6,17 @@ import { Liquidations } from "src/Liquidations.sol";
 contract InterestRate is Liquidations {
     constructor(
         address[] memory tokenAddresses,
-        address[] memory priceFeedAddresses
+        address[] memory priceFeedAddresses,
+        address swapRouterAddress,
+        address automationRegistry,
+        uint256 upkeepId
     )
-        Liquidations(tokenAddresses, priceFeedAddresses)
+        Liquidations(tokenAddresses, priceFeedAddresses, swapRouterAddress, automationRegistry, upkeepId)
     { }
 
     function updateInterestRewardForLending() public /* onlyOwner */ { }
 
     function updateInterestRateForBorrowing() public /* onlyOwner */ { }
+
+    // To be developed...
 }
