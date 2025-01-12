@@ -48,7 +48,7 @@ contract Withdraw is Borrowing {
 
         // user must have funds deposited to withdraw
         if (_getCollateralBalanceOfUser(from, tokenCollateralAddress) == 0) {
-            revert Errors.UserHasNoCollateralDeposited();
+            revert Errors.Withdraw__UserHasNoCollateralDeposited();
         }
 
         // user can only withdraw up to the amount he deposited
