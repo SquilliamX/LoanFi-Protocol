@@ -4,8 +4,91 @@ pragma solidity ^0.8.20;
 import { Withdraw } from "src/Withdraw.sol";
 import { Errors } from "src/libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { SwapLiquidatedTokens } from "src/SwapLiquidatedTokens.sol";
+import { IAutomationRegistryInterface } from "src/interfaces/IAutomationRegistryInterface.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract Liquidations is Withdraw {
+/**
+ * @title Liquidations Contract
+ * @notice Manages the liquidation process for unhealthy positions with a dual-mode liquidation system
+ *
+ * @dev Liquidation Modes:
+ * 1. Regular Liquidations (Market-Driven):
+ *    - External liquidators repay users' debt in exchange for user's collateral + 10% bonus
+ *    - Requires sufficient collateral value to pay the full bonus
+ *    - Most efficient during normal market conditions
+ *    - Anyone can be a liquidator
+ *
+ * 2. Protocol Liquidations (Emergency Mode):
+ *    - Activated when positions can't provide sufficient bonus
+ *    - Only the protocol (via automation) can perform these liquidations
+ *    - Used during flash crashes or extreme market conditions
+ *    - Protects protocol solvency when regular liquidations aren't viable
+ *
+ * @dev Bonus Waterfall Mechanism:
+ * The bonus collection follows a waterfall pattern:
+ * 1. Primary Collateral:
+ *    - First attempts to pay bonus from the collateral being liquidated
+ *    - Calculates maximum bonus available from this collateral
+ *    - If sufficient, entire bonus comes from this source
+ *
+ * 2. Secondary Collateral (If Needed):
+ *    - If primary collateral insufficient, checks other collateral types from user being liquidated
+ *    - Collects remaining needed bonus proportionally from other collateral
+ *    - Helps maintain liquidation incentives during partial collateral crashes
+ *
+ * 3. Protocol Intervention:
+ *    - If total available bonus (primary + secondary) < required bonus:
+ *      * Regular liquidators are blocked (revert)
+ *      * Only protocol can liquidate the position
+ *      * Automated system monitors and executes these liquidations
+ *
+ * @dev Example Scenarios:
+ * 1. Normal Case:
+ *    - User has $1000 ETH debt
+ *    - Liquidator repays $1000
+ *    - Liquidator receives $1000 + $100 (10% bonus) in ETH
+ *
+ * 2. Split Bonus Case:
+ *    - User has $1000 ETH debt
+ *    - ETH collateral can only provide $40 bonus
+ *    - Remaining $60 bonus collected from user's WBTC collateral
+ *
+ * 3. Protocol Liquidation Case:
+ *    - User has $1000 ETH debt
+ *    - Total available bonus across all collateral = $1000
+ *    - Regular liquidators blocked (insufficient bonus)
+ *    - Protocol automation liquidates position
+ *
+ * @dev Security Considerations:
+ * - Reentrancy protection on all liquidation functions
+ * - Access control for protocol liquidations
+ * - Health factor checks before and after liquidations
+ * - Bonus calculations protected against overflow/underflow
+ */
+contract Liquidations is Withdraw, Ownable {
+    using SafeERC20 for IERC20;
+
+    SwapLiquidatedTokens private immutable i_swapRouter;
+    IAutomationRegistryInterface private immutable i_automationRegistry;
+    uint256 private immutable i_upkeepId;
+
+    constructor(
+        address[] memory tokenAddresses,
+        address[] memory priceFeedAddresses,
+        address swapRouterAddress,
+        address automationRegistry,
+        uint256 upkeepId
+    )
+        Withdraw(tokenAddresses, priceFeedAddresses)
+        Ownable(msg.sender)
+    {
+        i_swapRouter = SwapLiquidatedTokens(swapRouterAddress);
+        i_automationRegistry = IAutomationRegistryInterface(automationRegistry);
+        i_upkeepId = upkeepId;
+    }
+
     /* 
      * @notice Groups parameters related to bonus calculations during liquidation
      * @dev Used to avoid stack too deep errors when passing multiple parameters
@@ -43,13 +126,6 @@ contract Liquidations is Withdraw {
         /// Total amount of collateral being seized
         uint256 totalCollateralToSeize;
     }
-
-    constructor(
-        address[] memory tokenAddresses,
-        address[] memory priceFeedAddresses
-    )
-        Withdraw(tokenAddresses, priceFeedAddresses)
-    { }
 
     /* 
      * @notice Liquidates an unhealthy position
@@ -179,6 +255,11 @@ contract Liquidations is Withdraw {
         // Checks to see if the user has other collateral to cover for the bonus of the liquidator if the user's collateral that is being liquidated is not enough to cover the bonus. (Safety to avoid Insolvency in case of flash crashes)
         bonusFromOtherCollateral =
             _collectBonusFromOtherCollateral(user, collateral, totalBonusNeededInUsd - bonusFromThisCollateral);
+
+        // If total bonus is less than required and caller is not the protocol, revert
+        if (bonusFromThisCollateral + bonusFromOtherCollateral < totalBonusNeededInUsd && msg.sender != address(this)) {
+            revert Errors.Liquidations__OnlyProtocolCanLiquidateInsufficientBonus();
+        }
 
         return (bonusFromThisCollateral, bonusFromOtherCollateral);
     }
@@ -375,6 +456,41 @@ contract Liquidations is Withdraw {
 
         // Then repay user's debt with liquidator's debt tokens
         _paybackBorrowedAmount(params.debtToken, params.debtAmountToPay, params.user);
+
+        // If protocol is liquidating
+        if (params.recipient == address(this)) {
+            // Calculate what bonus was actually available vs needed
+            uint256 debtInUsd = _getUsdValue(params.debtToken, params.debtAmountToPay);
+            uint256 totalBonusNeededInUsd = (debtInUsd * _getLiquidationBonus()) / _getLiquidationPrecision();
+            uint256 actualBonusInUsd = _getUsdValue(params.collateral, params.totalCollateralToSeize) - debtInUsd;
+
+            // Calculate protocol fee (whatever bonus was available)
+            uint256 protocolFeeAmount = params.totalCollateralToSeize - params.debtAmountToPay;
+
+            emit ProtocolFeeCollected(params.collateral, protocolFeeAmount, totalBonusNeededInUsd - actualBonusInUsd);
+
+            // First swap collateral to debt token to cover the debt
+            IERC20(params.collateral).approve(address(i_swapRouter), 0);
+            IERC20(params.collateral).approve(address(i_swapRouter), params.debtAmountToPay);
+            uint256 minAmountOutDebt =
+                _calculateMinAmountOut(params.collateral, params.debtToken, params.debtAmountToPay);
+            i_swapRouter.swapExactInputSingle(
+                params.collateral, params.debtToken, params.debtAmountToPay, minAmountOutDebt
+            );
+
+            // Then swap protocol fee to LINK for automation funding
+            address linkToken = i_automationRegistry.LINK();
+            IERC20(params.collateral).approve(address(i_swapRouter), 0);
+            IERC20(params.collateral).approve(address(i_swapRouter), protocolFeeAmount);
+            uint256 minAmountOutLink = _calculateMinAmountOut(params.collateral, linkToken, protocolFeeAmount);
+            uint256 linkReceived =
+                i_swapRouter.swapExactInputSingle(params.collateral, linkToken, protocolFeeAmount, minAmountOutLink);
+
+            // Fund Chainlink Automation with received LINK
+            IERC20(linkToken).approve(address(i_automationRegistry), 0);
+            IERC20(linkToken).approve(address(i_automationRegistry), linkReceived);
+            i_automationRegistry.addFunds(i_upkeepId, uint96(linkReceived));
+        }
     }
 
     /*
@@ -527,5 +643,157 @@ contract Liquidations is Withdraw {
         }
         // in the event of a flash crash and the user does not have enough to pay a bonus for a liquidator, then this protocol will automatically liquidate the user
         return address(this);
+    }
+
+    /**
+     * @notice Finds ALL positions that need protocol liquidation due to insufficient bonus
+     * @dev Returns arrays of matching debt tokens, collateral tokens, and amounts
+     * @dev This function is critical for protocol safety during market stress events
+     *
+     * Key Features:
+     * - Comprehensive position scanning
+     * - Gas-optimized array handling
+     * - Protection against flash crash scenarios
+     * - Supports multi-collateral positions
+     */
+    function getInsufficientBonusPositions(address user)
+        external
+        view
+        returns (
+            address[] memory debtTokens, // Array of tokens the user has borrowed
+            address[] memory collaterals, // Array of corresponding collateral tokens
+            uint256[] memory debtAmounts // Array of debt amounts to be repaid
+        )
+    {
+        // Step 1: Initialize arrays with maximum possible size
+        // Get list of all tokens supported by the protocol (e.g., [WETH, WBTC, DAI])
+        address[] memory allowedTokens = _getAllowedTokens();
+        uint256 allowedTokensLength = allowedTokens.length;
+
+        // Calculate maximum possible number of debt/collateral combinations
+        // Example: If we have 3 tokens, max combinations = 3 * 3 = 9
+        uint256 maxPositions = allowedTokensLength * allowedTokensLength;
+
+        // Create arrays to store all possible positions
+        // These will be resized at the end to match actual number found
+        debtTokens = new address[](maxPositions);
+        collaterals = new address[](maxPositions);
+        debtAmounts = new uint256[](maxPositions);
+        uint256 positionCount = 0; // Tracks how many positions we've found
+
+        // Step 2: Check each possible debt token
+        for (uint256 i = 0; i < allowedTokensLength; i++) {
+            // Get the current token we're checking as potential debt
+            address potentialDebtToken = allowedTokens[i];
+            // Check how much of this token the user has borrowed
+            uint256 userDebt = _getAmountOfTokenBorrowed(user, potentialDebtToken);
+
+            // Only proceed if user has borrowed this token
+            if (userDebt > 0) {
+                // Convert debt amount to USD for consistent comparisons
+                // Example: If debt is 1 ETH and ETH = $2000, debtInUsd = $2000
+                uint256 debtInUsd = _getUsdValue(potentialDebtToken, userDebt);
+
+                // Calculate required liquidation bonus (typically 10%)
+                // Example: For $2000 debt, bonus needed = $200
+                uint256 totalBonusNeededInUsd = (debtInUsd * _getLiquidationBonus()) / _getLiquidationPrecision();
+
+                // Step 3: For each debt, check every possible collateral token
+                for (uint256 j = 0; j < allowedTokensLength; j++) {
+                    address potentialCollateral = allowedTokens[j];
+
+                    // Get user's balance of this collateral token
+                    uint256 collateralBalance = _getCollateralBalanceOfUser(user, potentialCollateral);
+                    // Convert collateral to USD value
+                    // Example: If collateral is 1 ETH and ETH = $2000, value = $2000
+                    uint256 collateralValueInUsd = _getUsdValue(potentialCollateral, collateralBalance);
+
+                    // Step 4: Calculate available bonus from this collateral
+                    // This complex calculation handles three cases:
+                    // 1. Collateral value <= Debt: No bonus possible (returns 0)
+                    // 2. Excess collateral < Needed bonus: Partial bonus available
+                    // 3. Excess collateral >= Needed bonus: Full bonus available
+                    uint256 bonusFromThisCollateral = (collateralValueInUsd > debtInUsd)
+                        ? (
+                            (collateralValueInUsd - debtInUsd) > totalBonusNeededInUsd
+                                ? totalBonusNeededInUsd // Can pay full bonus
+                                : (collateralValueInUsd - debtInUsd)
+                        ) // Can only pay partial bonus
+                        : 0; // Can't pay any bonus
+
+                    // Step 5: If this position can't provide full bonus, it needs protocol liquidation
+                    if (bonusFromThisCollateral < totalBonusNeededInUsd) {
+                        // Store this position's details
+                        debtTokens[positionCount] = potentialDebtToken;
+                        collaterals[positionCount] = potentialCollateral;
+                        debtAmounts[positionCount] = userDebt;
+                        positionCount++;
+                    }
+                }
+            }
+        }
+
+        // Step 6: Optimize memory usage by resizing arrays to actual number of positions found
+        // This uses assembly for gas efficiency
+        assembly {
+            mstore(debtTokens, positionCount) // Update debtTokens array length
+            mstore(collaterals, positionCount) // Update collaterals array length
+            mstore(debtAmounts, positionCount) // Update debtAmounts array length
+        }
+    }
+
+    function protocolLiquidate(
+        address user,
+        address collateral,
+        address debtToken,
+        uint256 debtAmountToPay
+    )
+        external
+        onlyOwner
+        nonReentrant
+    {
+        // Use delegatecall to execute the liquidate function in the context of this contract
+        // delegatecall means the liquidation will happen as if the protocol itself is the liquidator
+        // This is useful when positions need liquidation but external liquidators aren't incentivized enough (during flash crashes when the user cannot afford the 10% bonus)
+        (bool success,) = address(this).delegatecall(
+            // Encode the function call to "liquidate" with all its parameters
+            // The signature "liquidate(address,address,address,uint256)" identifies which function to call
+            // The parameters (user, collateral, debtToken, debtAmountToPay) are the actual values to use
+            abi.encodeWithSignature(
+                "liquidate(address,address,address,uint256)",
+                user, // The user to liquidate
+                collateral, // The collateral token to seize
+                debtToken, // The debt token to repay
+                debtAmountToPay // How much debt to repay
+            )
+        );
+
+        // If the delegatecall failed for any reason, revert the transaction
+        // This ensures we don't partially liquidate or leave the system in an inconsistent state
+        if (!success) {
+            revert Errors.Liquidations__ProtocolLiquidationFailed();
+        }
+    }
+
+    // Add event for tracking protocol fees
+    event ProtocolFeeCollected(address indexed collateralToken, uint256 feeAmount, uint256 bonusShortfall);
+
+    function _calculateMinAmountOut(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn
+    )
+        private
+        view
+        returns (uint256)
+    {
+        // Get USD value of input amount
+        uint256 valueInUsd = _getUsdValue(tokenIn, amountIn);
+
+        // Allow 2% slippage
+        uint256 minValueInUsd = (valueInUsd * 98) / 100;
+
+        // Convert USD value back to token amount using output token's price
+        return (minValueInUsd * _getPrecision()) / _getUsdValue(tokenOut, _getPrecision());
     }
 }
