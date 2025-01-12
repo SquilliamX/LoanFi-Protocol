@@ -39,8 +39,8 @@ library Errors {
     error Liquidations__HealthFactorOk();
     error Liquidations__HealthFactorNotImproved();
     error Liquidations__InsufficientBalanceToLiquidate();
-    error Liquidations__DebtAmountExceedsBorrowedAmount();
     error Liquidations__CantLiquidateSelf();
+    error Liquidations__DebtAmountExceedsBorrowedAmount();
 
     //////////////////////////////
     //     Withdraw Errors     //
