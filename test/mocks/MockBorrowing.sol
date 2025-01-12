@@ -30,12 +30,14 @@ contract MockBorrowing is ERC20Burnable, Ownable {
         }
     }
 
-    function _paybackBorrowedAmount(address tokenToPayBack, uint256 amountToPayBack, address onBehalfOf) private view {
-        // if the address being paid on behalf of is the 0 address, revert
-        if (onBehalfOf == address(0)) {
-            revert Errors.ZeroAddressNotAllowed();
-        }
-
+    function _paybackBorrowedAmount(
+        address tokenToPayBack,
+        uint256 amountToPayBack,
+        address /* onBehalfOf */
+    )
+        private
+        view
+    {
         // Transfer tokens from user to contract
         bool success = transferFrom(msg.sender, address(this), tokenToPayBack, amountToPayBack);
 
