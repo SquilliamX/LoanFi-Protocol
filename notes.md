@@ -4297,6 +4297,11 @@ How to make all the text be on one line?
 Open the command pallete with `ctrl + shift + p ` and search for `join lines`. If word wrap is still on then search for `view toggle word wrap` or `toggle word wrap`
 
 
+If you have a `stack too deep error`, and it does not tell you what is causing this, it might just be your test file! Comment out your entire test file and run `forge build`. 
+
+`Stack Too Deep` typically occurs when there are too many local variables declared in a function, exceeding the maximum limit allowed by the Solidity compiler.
+
+If it is not your test file, comment out your largest functions/functions with the most local variables/main functions that call many helper functions and run `forge build`, then work your way down from there
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
