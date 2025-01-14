@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { InterestRate } from "src/InterestRate.sol";
+import { Withdraw } from "./Withdraw.sol";
+import { LiquidationEngine } from "./Liquidation-Operations/LiquidationEngine.sol";
 
-contract LoanFi is InterestRate {
+contract LoanFi is Withdraw {
+    LiquidationEngine public liquidationEngine;
+
     constructor(
         address[] memory tokenAddresses,
         address[] memory priceFeedAddresses,
@@ -11,12 +14,17 @@ contract LoanFi is InterestRate {
         address automationRegistry,
         uint256 upkeepId
     )
-        InterestRate(tokenAddresses, priceFeedAddresses, swapRouter, automationRegistry, upkeepId)
-    { }
+        Withdraw(tokenAddresses, priceFeedAddresses)
+    {
+        liquidationEngine = new LiquidationEngine(address(this), swapRouter, automationRegistry, upkeepId);
+    }
 
-    // Shared Functions
-
-    // deposit and borrow
+    // Delegate liquidation calls to LiquidationEngine
+    function liquidate(address user, address collateral, address debtToken, uint256 debtAmountToPay) external {
+        liquidationEngine.liquidate(user, collateral, debtToken, debtAmountToPay);
+    }
 
     // payback and withdraw
+
+    // deposit and borrow
 }
