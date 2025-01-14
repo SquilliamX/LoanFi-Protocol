@@ -66,8 +66,6 @@ contract CoreStorage is ReentrancyGuard {
 
     event CollateralWithdrawn(address indexed token, uint256 amount, address indexed WithdrawnFrom, address WithdrawTo);
 
-    event UserLiquidated(address indexed collateral, address indexed userLiquidated, uint256 amountOfDebtPaid);
-
     ///////////////////
     //     Type     //
     //////////////////
