@@ -86,8 +86,13 @@ contract DeployLoanFi is Script {
      */
     function deployContracts() private {
         vm.startBroadcast(s_deployerKey);
+
+        // Deploy main protocol
         loanFi = new LoanFi(tokenAddresses, priceFeedAddresses, s_swapRouter, s_automationRegistry, s_upkeepId);
-        liquidationAutomation = new LiquidationAutomation(address(loanFi));
+
+        // LiquidationEngine is now deployed by LoanFi constructor
+        liquidationAutomation = new LiquidationAutomation(address(loanFi.liquidationEngine()));
+
         vm.stopBroadcast();
     }
 }
