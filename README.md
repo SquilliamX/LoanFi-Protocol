@@ -68,17 +68,17 @@ This multi-layered approach ensures:
 
 ```mermaid
 graph LR
-    LoanFi --> Borrowing
-    Borrowing --> Lending
-    Lending --> HealthFactor
-    HealthFactor --> CoreStorage
-    
-    LoanFi --> LiquidationEngine
-    LiquidationEngine --> LiquidationCore
-    LiquidationCore --> Getters
-    
-    LiquidationEngine --> SwapLiquidatedTokens
-    SwapLiquidatedTokens --> Uniswap
+    A[LoanFi] --> B[Borrowing]
+    B --> C[Lending]
+    C --> D[HealthFactor]
+    D --> E[CoreStorage]
+    A --> F[LiquidationEngine]
+    F --> G[LiquidationCore]
+    G --> H[Getters]
+    A --> I[LiquidationAutomation]
+    I --> J[Chainlink Automation]
+    F --> K[SwapLiquidatedTokens]
+    K --> L[Uniswap V3]
 ```
 
 The protocol follows a modular architecture with clear separation of concerns:
