@@ -67,18 +67,26 @@ This multi-layered approach ensures:
 ### 🏗️ Protocol Architecture
 
 ```mermaid
-graph LR
-    A[LoanFi] --> B[Borrowing]
-    B --> C[Lending]
-    C --> D[HealthFactor]
-    D --> E[CoreStorage]
-    A --> F[LiquidationEngine]
-    F --> G[LiquidationCore]
-    G --> H[Getters]
-    A --> I[LiquidationAutomation]
-    I --> J[Chainlink Automation]
-    F --> K[SwapLiquidatedTokens]
-    K --> L[Uniswap V3]
+flowchart TB
+    subgraph Core
+        A[LoanFi]---B[Borrowing]
+        B---C[Lending]
+        C---D[HealthFactor]
+        D---E[CoreStorage]
+    end
+    subgraph Liquidations
+        A---F[LiquidationEngine]
+        F---G[LiquidationCore]
+        G---H[Getters]
+    end
+    subgraph Automation
+        A---I[LiquidationAutomation]
+        I---J[Chainlink]
+    end
+    subgraph Integration
+        F---K[SwapLiquidatedTokens]
+        K---L[Uniswap]
+    end
 ```
 
 The protocol follows a modular architecture with clear separation of concerns:
