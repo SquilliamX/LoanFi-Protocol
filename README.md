@@ -68,31 +68,28 @@ This multi-layered approach ensures:
 
 ```mermaid
 graph LR
-    subgraph Core ["Core"]
+    subgraph Core
         LoanFi --> Borrowing
         Borrowing --> Lending
         Lending --> HealthFactor
         HealthFactor --> CoreStorage
     end
 
-    subgraph Liquidations ["Liquidations"]
+    subgraph Liquidations
         LoanFi --> LiquidationEngine
         LiquidationEngine --> LiquidationCore
         LiquidationCore --> Getters
     end
 
-    subgraph Automation ["Automation"]
+    subgraph Automation
         LoanFi --> LiquidationAutomation
         LiquidationAutomation --> Chainlink
     end
 
-    subgraph Integration ["Integration"]
+    subgraph Integration
         LiquidationEngine --> SwapLiquidatedTokens
         SwapLiquidatedTokens --> Uniswap
     end
-
-    classDef default fill:#f9f9f9,stroke:#333,stroke-width:2px;
-    classDef subgraph fill:#eee,stroke:#666,stroke-width:2px;
 ```
 
 The protocol follows a modular architecture with clear separation of concerns:
