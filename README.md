@@ -66,20 +66,32 @@ This multi-layered approach ensures:
 
 ### 🏗️ Protocol Architecture
 
-The protocol follows a modular architecture with clear separation of concerns:
 ```mermaid
 graph LR
-    A[LoanFi] --> B[Borrowing]
-    B --> C[Lending]
-    C --> D[HealthFactor]
-    D --> E[CoreStorage]
-    A --> F[LiquidationEngine]
-    F --> G[LiquidationCore]
-    G --> H[Getters]
-    A --> I[LiquidationAutomation]
-    I --> J[Chainlink Automation]
-    F --> K[SwapLiquidatedTokens]
-    K --> L[Uniswap V3]
+    style LoanFi fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style Borrowing fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style Lending fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style HealthFactor fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style CoreStorage fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style LiquidationEngine fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style LiquidationCore fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style Getters fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style LiquidationAutomation fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style ChainlinkAutomation fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style SwapLiquidatedTokens fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    style UniswapV3 fill:#fff,stroke:#333,stroke-width:2px,color:#000
+
+    LoanFi --> Borrowing
+    Borrowing --> Lending
+    Lending --> HealthFactor
+    HealthFactor --> CoreStorage
+    LoanFi --> LiquidationEngine
+    LiquidationEngine --> LiquidationCore
+    LiquidationCore --> Getters
+    LoanFi --> LiquidationAutomation
+    LiquidationAutomation --> ChainlinkAutomation
+    LiquidationEngine --> SwapLiquidatedTokens
+    SwapLiquidatedTokens --> UniswapV3
 ```
 
 #### Core Protocol Layer
