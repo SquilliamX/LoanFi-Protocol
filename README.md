@@ -66,6 +66,7 @@ This multi-layered approach ensures:
 
 ### 🏗️ Protocol Architecture
 
+Click To Open ⬇️
 ```mermaid
 graph LR
     A[LoanFi] --> B[Borrowing]
