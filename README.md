@@ -66,20 +66,22 @@ This multi-layered approach ensures:
 
 ### 🏗️ Protocol Architecture
 
+The protocol follows a modular architecture with clear separation of concerns:
+
 ```mermaid
 graph LR
-    style LoanFi fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style Borrowing fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style Lending fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style HealthFactor fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style CoreStorage fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style LiquidationEngine fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style LiquidationCore fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style Getters fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style LiquidationAutomation fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style ChainlinkAutomation fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style SwapLiquidatedTokens fill:#fff,stroke:#333,stroke-width:2px,color:#000
-    style UniswapV3 fill:#fff,stroke:#333,stroke-width:2px,color:#000
+    LoanFi["LoanFi"]
+    Borrowing["Borrowing"]
+    Lending["Lending"]
+    HealthFactor["HealthFactor"]
+    CoreStorage["CoreStorage"]
+    LiquidationEngine["LiquidationEngine"]
+    LiquidationCore["LiquidationCore"]
+    Getters["Getters"]
+    LiquidationAutomation["LiquidationAutomation"]
+    ChainlinkAutomation["Chainlink Automation"]
+    SwapLiquidatedTokens["SwapLiquidatedTokens"]
+    UniswapV3["Uniswap V3"]
 
     LoanFi --> Borrowing
     Borrowing --> Lending
@@ -92,6 +94,9 @@ graph LR
     LiquidationAutomation --> ChainlinkAutomation
     LiquidationEngine --> SwapLiquidatedTokens
     SwapLiquidatedTokens --> UniswapV3
+
+    classDef default fill:#fff,stroke:#333,stroke-width:2px,color:black;
+    class LoanFi,Borrowing,Lending,HealthFactor,CoreStorage,LiquidationEngine,LiquidationCore,Getters,LiquidationAutomation,ChainlinkAutomation,SwapLiquidatedTokens,UniswapV3 default;
 ```
 
 #### Core Protocol Layer
