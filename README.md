@@ -67,36 +67,19 @@ This multi-layered approach ensures:
 ### 🏗️ Protocol Architecture
 
 The protocol follows a modular architecture with clear separation of concerns:
-
 ```mermaid
 graph LR
-    LoanFi["LoanFi"]
-    Borrowing["Borrowing"]
-    Lending["Lending"]
-    HealthFactor["HealthFactor"]
-    CoreStorage["CoreStorage"]
-    LiquidationEngine["LiquidationEngine"]
-    LiquidationCore["LiquidationCore"]
-    Getters["Getters"]
-    LiquidationAutomation["LiquidationAutomation"]
-    ChainlinkAutomation["Chainlink Automation"]
-    SwapLiquidatedTokens["SwapLiquidatedTokens"]
-    UniswapV3["Uniswap V3"]
-
-    LoanFi --> Borrowing
-    Borrowing --> Lending
-    Lending --> HealthFactor
-    HealthFactor --> CoreStorage
-    LoanFi --> LiquidationEngine
-    LiquidationEngine --> LiquidationCore
-    LiquidationCore --> Getters
-    LoanFi --> LiquidationAutomation
-    LiquidationAutomation --> ChainlinkAutomation
-    LiquidationEngine --> SwapLiquidatedTokens
-    SwapLiquidatedTokens --> UniswapV3
-
-    classDef default fill:#fff,stroke:#333,stroke-width:2px,color:black;
-    class LoanFi,Borrowing,Lending,HealthFactor,CoreStorage,LiquidationEngine,LiquidationCore,Getters,LiquidationAutomation,ChainlinkAutomation,SwapLiquidatedTokens,UniswapV3 default;
+    A[LoanFi] --> B[Borrowing]
+    B --> C[Lending]
+    C --> D[HealthFactor]
+    D --> E[CoreStorage]
+    A --> F[LiquidationEngine]
+    F --> G[LiquidationCore]
+    G --> H[Getters]
+    A --> I[LiquidationAutomation]
+    I --> J[Chainlink Automation]
+    F --> K[SwapLiquidatedTokens]
+    K --> L[Uniswap V3]
 ```
 
 #### Core Protocol Layer
