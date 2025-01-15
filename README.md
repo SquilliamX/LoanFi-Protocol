@@ -66,7 +66,7 @@ This multi-layered approach ensures:
 
 ### 🏗️ Protocol Architecture
 
-Click To Open ⬇️
+The protocol follows a modular architecture with clear separation of concerns:
 ```mermaid
 graph LR
     A[LoanFi] --> B[Borrowing]
@@ -81,8 +81,6 @@ graph LR
     F --> K[SwapLiquidatedTokens]
     K --> L[Uniswap V3]
 ```
-
-The protocol follows a modular architecture with clear separation of concerns:
 
 #### Core Protocol Layer
 - **LoanFi**: Main protocol entry point and orchestrator
