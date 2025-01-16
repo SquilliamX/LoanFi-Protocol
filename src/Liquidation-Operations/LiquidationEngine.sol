@@ -108,6 +108,7 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
      * @dev In events of flash crashes and the user does not have enough of the collateral token that the liquidator chose as a reward, the protocol will split the reward from the user's other collateral types deposited, to incentivize liquidators. If the user still does not have enough collateral to incentivize liquidators, the protocol will liquidate users to cover the losses.
     */
     function liquidate(
+        address liquidator,
         address user,
         address collateral,
         address debtToken,
@@ -116,7 +117,7 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         external
         nonReentrant
     {
-        _liquidate(collateral, debtToken, user, debtAmountToPay);
+        _liquidate(liquidator, user, collateral, debtToken, debtAmountToPay);
     }
 
     function protocolLiquidate(
@@ -134,10 +135,11 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         // This is useful when positions need liquidation but external liquidators aren't incentivized enough (during flash crashes when the user cannot afford the 10% bonus)
         (bool success,) = address(this).delegatecall(
             // Encode the function call to "liquidate" with all its parameters
-            // The signature "liquidate(address,address,address,uint256)" identifies which function to call
+            // The signature "liquidate(address,address,address,address,uint256)" identifies which function to call
             // The parameters (user, collateral, debtToken, debtAmountToPay) are the actual values to use
             abi.encodeWithSignature(
-                "liquidate(address,address,address,uint256)",
+                "liquidate(address,address,address,address,uint256)", // Updated signature
+                address(this), // Protocol is the liquidator
                 user, // The user to liquidate
                 collateral, // The collateral token to seize
                 debtToken, // The debt token to repay
@@ -168,14 +170,19 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         view
         returns (address[] memory debtTokens, address[] memory collaterals, uint256[] memory debtAmounts)
     {
-        // Initialize arrays
-        uint256 maxPositions = _getAllowedTokens().length * _getAllowedTokens().length;
-        PositionInfo memory positions = _initializePositionArrays(maxPositions);
+        if (!(msg.sender == address(i_automationRegistry) || msg.sender == owner())) {
+            revert Errors.Liquidations__OnlyAutomationOrOwner();
+        }
 
-        // Process positions and get count
+        uint256 maxAllowedTokens = 50; // Reasonable upper limit
+        require(_getAllowedTokens().length <= maxAllowedTokens, "Too many tokens");
+
+        uint256 batchSize = 10; // Process in smaller chunks
+        uint256 maxPositions = batchSize * batchSize;
+
+        PositionInfo memory positions = _initializePositionArrays(maxPositions);
         uint256 positionCount = _findInsufficientBonusPositions(user, positions);
 
-        // Return resized arrays
         return _resizePositionArrays(positions, positionCount);
     }
 
