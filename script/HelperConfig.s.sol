@@ -6,20 +6,36 @@ import { MockV3Aggregator } from "../test/mocks/MockV3Aggregator.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 contract HelperConfig is Script {
-    // Define a struct to hold all our network configuration data
+    // Define structs to hold all our network configuration data. We need to break up the structs because of stack too deep errors.
     // This makes it easier to pass around network-specific addresses
-    struct NetworkConfig {
+    struct PriceFeeds {
         address wethUsdPriceFeed; // Price feed for ETH/USD
         address wbtcUsdPriceFeed; // Price feed for BTC/USD
         address linkUsdPriceFeed; // Price feed for LINK/USD
+    }
+
+    struct Tokens {
         address weth; // WETH token address
         address wbtc; // WBTC token address
         address link; // Link token address
+    }
+
+    struct AutomationConfig {
         uint256 deployerKey; // Private key for deployment
         address swapRouter; // Uniswap V3 Router
         address automationRegistry; // Chainlink Automation Registry
         uint256 upkeepId; // Chainlink Upkeep ID
     }
+
+    struct NetworkConfig {
+        PriceFeeds priceFeeds;
+        Tokens tokens;
+        AutomationConfig automationConfig;
+    }
+
+    PriceFeeds public priceFeeds;
+    Tokens public tokens;
+    AutomationConfig public automationConfig;
 
     // Constants for mock price feed configuration
     uint8 public constant DECIMALS = 8; // Chainlink price feeds use 8 decimals
@@ -46,25 +62,34 @@ contract HelperConfig is Script {
     }
 
     // Returns configuration for Sepolia testnet with real contract addresses
-    function getSepoliaEthConfig() public view returns (NetworkConfig memory sepoliaNetworkConfig) {
-        sepoliaNetworkConfig = NetworkConfig({
-            wethUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306, // ETH / USD price feed on Sepolia
-            wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43, // BTC / USD price feed on Sepolia
-            linkUsdPriceFeed: 0xc59E3633BAAC79493d908e63626716e204A45EdF, // LINK / USD pricefeed on Sepolia
-            weth: 0xdd13E55209Fd76AfE204dBda4007C227904f0a81, // WETH token on Sepolia
-            wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063, // WBTC token on Sepolia
-            link: 0x779877A7B0D9E8603169DdbD7836e478b4624789, // LINK token on Sepolia
-            deployerKey: vm.envUint("PRIVATE_KEY"), // Get deployer key from .env file for testing purposes
-            swapRouter: 0xb41b78Ce3D1BDEDE48A3d303eD2564F6d1F6fff0, // Uniswap swap router on Sepolia?
-            automationRegistry: 0xE16Df59B887e3Caa439E0b29B42bA2e7976FD8b2, // Chainlink Automation Registry on Sepolia?
-            upkeepId: vm.envUint("UPKEEP_ID") // Get from .env file after creating upkeep
-         });
+    function getSepoliaEthConfig() public view returns (NetworkConfig memory) {
+        return NetworkConfig({
+            priceFeeds: PriceFeeds({
+                // pircefeeds on Sepolia
+                wethUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306,
+                wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
+                linkUsdPriceFeed: 0xc59E3633BAAC79493d908e63626716e204A45EdF
+            }),
+            tokens: Tokens({
+                // token addresses on sepolia
+                weth: 0xdd13E55209Fd76AfE204dBda4007C227904f0a81,
+                wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
+                link: 0x779877A7B0D9E8603169DdbD7836e478b4624789
+            }),
+            automationConfig: AutomationConfig({
+                // addresses for key components on sepolia
+                deployerKey: vm.envUint("PRIVATE_KEY"),
+                swapRouter: 0xb41b78Ce3D1BDEDE48A3d303eD2564F6d1F6fff0,
+                automationRegistry: 0xE16Df59B887e3Caa439E0b29B42bA2e7976FD8b2,
+                upkeepId: vm.envUint("UPKEEP_ID")
+            })
+        });
     }
 
     // Returns or creates configuration for local testing with mock contracts
     function getOrCreateAnvilEthConfig() public returns (NetworkConfig memory) {
         // If config already exists, return it
-        if (activeNetworkConfig.wethUsdPriceFeed != address(0)) {
+        if (activeNetworkConfig.priceFeeds.wethUsdPriceFeed != address(0)) {
             return activeNetworkConfig;
         }
 
@@ -85,16 +110,22 @@ contract HelperConfig is Script {
 
         // Return config with mock addresses
         return NetworkConfig({
-            wethUsdPriceFeed: address(wethUsdPriceFeed),
-            wbtcUsdPriceFeed: address(btcUsdPriceFeed),
-            linkUsdPriceFeed: address(linkUsdPriceFeed),
-            weth: address(wethMock),
-            wbtc: address(wbtcMock),
-            link: address(linkMock),
-            deployerKey: DEFAULT_ANVIL_KEY,
-            swapRouter: address(0),
-            automationRegistry: address(0),
-            upkeepId: 0
+            priceFeeds: PriceFeeds({
+                wethUsdPriceFeed: address(wethUsdPriceFeed),
+                wbtcUsdPriceFeed: address(btcUsdPriceFeed),
+                linkUsdPriceFeed: address(linkUsdPriceFeed)
+            }),
+            tokens: Tokens({ 
+                weth: address(wethMock), 
+                wbtc: address(wbtcMock), 
+                link: address(linkMock) 
+            }),
+            automationConfig: AutomationConfig({
+                deployerKey: DEFAULT_ANVIL_KEY,
+                swapRouter: address(0),
+                automationRegistry: address(0),
+                upkeepId: 0
+            })
         });
     }
 }
