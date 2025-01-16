@@ -48,35 +48,41 @@ contract DeployLoanFi is Script {
         // This will either return mock addresses for local testing or real addresses for testnet
         helperConfig = new HelperConfig();
         // Get all the network configuration values using the destructuring syntax
+        // (
+        //     // wethUsdPriceFeed: Price feed for ETH/USD
+        //     address wethUsdPriceFeed,
+        //     // wbtcUsdPriceFeed: Price feed for BTC/USD
+        //     address wbtcUsdPriceFeed,
+        //     // linkUsdPriceFeed: price feed for LINK/USD
+        //     address linkUsdPriceFeed,
+        //     // weth: WETH token address
+        //     address weth,
+        //     // wbtc: WBTC token address
+        //     address wbtc,
+        //     // link: LINK token address
+        //     address link,
+        //     // deployerKey: Private key for deployment depending on chain we deploy to
+        //     uint256 _deployerKey,
+        //     address swapRouter,
+        //     address automationRegistry,
+        //     uint256 upkeepId
+        // ) = helperConfig.activeNetworkConfig();
+
         (
-            // wethUsdPriceFeed: Price feed for ETH/USD
-            address wethUsdPriceFeed,
-            // wbtcUsdPriceFeed: Price feed for BTC/USD
-            address wbtcUsdPriceFeed,
-            // linkUsdPriceFeed: price feed for LINK/USD
-            address linkUsdPriceFeed,
-            // weth: WETH token address
-            address weth,
-            // wbtc: WBTC token address
-            address wbtc,
-            // link: LINK token address
-            address link,
-            // deployerKey: Private key for deployment depending on chain we deploy to
-            uint256 _deployerKey,
-            address swapRouter,
-            address automationRegistry,
-            uint256 upkeepId
+            HelperConfig.PriceFeeds memory priceFeeds,
+            HelperConfig.Tokens memory tokens,
+            HelperConfig.AutomationConfig memory automationConfig
         ) = helperConfig.activeNetworkConfig();
 
         // set the private key from the helperConfig equal to the private key declared at contract level
-        s_deployerKey = _deployerKey;
-        s_swapRouter = swapRouter;
-        s_automationRegistry = automationRegistry;
-        s_upkeepId = upkeepId;
+        s_deployerKey = automationConfig.deployerKey;
+        s_swapRouter = automationConfig.swapRouter;
+        s_automationRegistry = automationConfig.automationRegistry;
+        s_upkeepId = automationConfig.upkeepId;
 
         // Set up our arrays with the token addresses and their corresponding price feeds
-        tokenAddresses = [weth, wbtc, link];
-        priceFeedAddresses = [wethUsdPriceFeed, wbtcUsdPriceFeed, linkUsdPriceFeed];
+        tokenAddresses = [tokens.weth, tokens.wbtc, tokens.link];
+        priceFeedAddresses = [priceFeeds.wethUsdPriceFeed, priceFeeds.wbtcUsdPriceFeed, priceFeeds.linkUsdPriceFeed];
     }
 
     /*
