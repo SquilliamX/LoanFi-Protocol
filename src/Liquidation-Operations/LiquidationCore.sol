@@ -134,7 +134,7 @@ contract LiquidationCore is Getters {
         _processLiquidation(params, collateralData);
 
         _verifyHealthFactorAfterLiquidation(params.user, startingUserHealthFactor);
-        
+
         // Safety check
         _revertIfHealthFactorIsBroken(msg.sender);
     }
@@ -463,8 +463,9 @@ contract LiquidationCore is Getters {
         uint256 totalCollateralToSeize = debtInCollateralTerms + bonusCollateral;
 
         // Determine recipient based on bonus availability
-        address recipient =
-            _determineRecipient(bonusFromThisCollateral + bonusFromOtherCollateral, totalBonusNeededInUsd);
+        address recipient = _determineRecipient(
+            bonusFromThisCollateral + bonusFromOtherCollateral, totalBonusNeededInUsd, params.liquidator
+        );
 
         // Execute transfers
         TransferParams memory transferParams = TransferParams({
@@ -559,19 +560,30 @@ contract LiquidationCore is Getters {
         // Default empty implementation
     }
 
+    /**
+     * @notice Determines who should receive the liquidated collateral based on bonus availability
+     * @dev If sufficient bonus is available, liquidator receives collateral
+     *      If insufficient bonus (flash crash scenario), protocol handles liquidation
+     * @param totalBonusAvailable Total bonus available across all collateral types
+     * @param totalBonusNeededInUsd Required bonus amount in USD
+     * @return address The recipient of the liquidated collateral (liquidator or protocol)
+     */
     function _determineRecipient(
         uint256 totalBonusAvailable,
-        uint256 totalBonusNeededInUsd
+        uint256 totalBonusNeededInUsd,
+        address liquidator
     )
         private
         view
         returns (address)
     {
-        // if the user has enough to pay the bonus for the liquidator, then pay the liquidator.
+        // If user has enough collateral to pay the full bonus, send to liquidator
         if (totalBonusAvailable >= totalBonusNeededInUsd) {
-            return msg.sender;
+            return liquidator;
         }
-        // in the event of a flash crash and the user does not have enough to pay a bonus for a liquidator, then this protocol will automatically liquidate the user
+
+        // In flash crash scenarios where bonus can't be fully paid
+        // protocol takes over liquidation to protect the system
         return address(this);
     }
 }
