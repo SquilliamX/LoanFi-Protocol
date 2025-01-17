@@ -115,11 +115,7 @@ contract HelperConfig is Script {
                 wbtcUsdPriceFeed: address(btcUsdPriceFeed),
                 linkUsdPriceFeed: address(linkUsdPriceFeed)
             }),
-            tokens: Tokens({ 
-                weth: address(wethMock), 
-                wbtc: address(wbtcMock), 
-                link: address(linkMock) 
-            }),
+            tokens: Tokens({ weth: address(wethMock), wbtc: address(wbtcMock), link: address(linkMock) }),
             automationConfig: AutomationConfig({
                 deployerKey: DEFAULT_ANVIL_KEY,
                 swapRouter: address(0),
