@@ -394,8 +394,22 @@ contract LiquidationCore is Getters {
 
             // 7. If we can take some tokens, do the transfer
             if (tokenAmountToTake > 0) {
-                _withdrawCollateral(token, tokenAmountToTake, user, address(this));
+                // Create transfer params for the withdrawal
+                TransferParams memory params = TransferParams({
+                    collateral: token,
+                    debtToken: address(0), // not needed for this call
+                    user: user,
+                    recipient: address(this),
+                    debtAmountToPay: 0, // not needed for this call
+                    totalCollateralToSeize: tokenAmountToTake,
+                    liquidator: address(0) // not needed for this call
+                 });
+
+                _liquidatationWithdrawCollateralFromUser(params);
                 bonusCollectedInUsd += bonusToTakeInUsd;
+
+                // If we've collected enough bonus, stop
+                if (bonusCollectedInUsd >= bonusNeededInUsd) break;
             }
         }
 
