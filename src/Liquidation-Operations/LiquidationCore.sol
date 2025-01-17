@@ -11,6 +11,7 @@ contract LiquidationCore is Getters {
      * @notice Groups parameters related to bonus calculations during liquidation
      * @dev Used to avoid stack too deep errors when passing multiple parameters
      */
+
     struct BonusParams {
         /// The collateral token address being liquidated
         address collateral;
@@ -43,6 +44,8 @@ contract LiquidationCore is Getters {
         uint256 debtAmountToPay;
         /// Total amount of collateral being seized
         uint256 totalCollateralToSeize;
+        /// The address of the liquidator
+        address liquidator;
     }
 
     struct CollateralData {
@@ -55,6 +58,7 @@ contract LiquidationCore is Getters {
 
     struct LiquidationParams {
         address user; // The user being liquidated
+        address liquidator; // The address performing the liquidation
         address recipient; // The recipient of the liquidated collateral
         address debtToken; // The borrowed token to be repaid
         uint256 debtAmountToPay; // Amount of debt to repay
@@ -104,11 +108,19 @@ contract LiquidationCore is Getters {
         // Initialize core liquidation parameters
         LiquidationParams memory params = LiquidationParams({
             user: user, // user is the user being liquidated passed in parameter
+            liquidator: liquidator, // liquidator is the liquidator's address passed in parameter
             recipient: address(0), // Will be set during process
             debtToken: debtToken, // debtToken is the debtToken passed in parameter
             debtAmountToPay: debtAmountToPay, // debt token amount user being liquidated has
             debtInUsd: _getUsdValue(debtToken, debtAmountToPay) // get the usdValue of the debt
          });
+
+        // get user health factor
+        uint256 startingUserHealthFactor = _healthFactor(params.user);
+        // if user's health factor is above 1, revert
+        if (startingUserHealthFactor >= _getMinimumHealthFactor()) {
+            revert Errors.Liquidations__HealthFactorIsHealthy();
+        }
 
         // Initialize collateral data
         CollateralData memory collateralData = CollateralData({
@@ -119,16 +131,11 @@ contract LiquidationCore is Getters {
             totalAvailable: 0 // Will be calculated if needed
          });
 
-        // get user health factor
-        uint256 startingUserHealthFactor = _healthFactor(params.user);
-        // if user's health factor is above 1, revert
-        if (startingUserHealthFactor >= _getMinimumHealthFactor()) {
-            revert Errors.Liquidations__HealthFactorIsHealthy();
-        }
-
         _processLiquidation(params, collateralData);
 
         _verifyHealthFactorAfterLiquidation(params.user, startingUserHealthFactor);
+        
+        // Safety check
         _revertIfHealthFactorIsBroken(msg.sender);
     }
 
@@ -466,7 +473,8 @@ contract LiquidationCore is Getters {
             user: params.user,
             recipient: recipient,
             debtAmountToPay: params.debtAmountToPay,
-            totalCollateralToSeize: totalCollateralToSeize
+            totalCollateralToSeize: totalCollateralToSeize,
+            liquidator: params.liquidator
         });
 
         _executeTransfers(transferParams);
@@ -498,7 +506,14 @@ contract LiquidationCore is Getters {
     }
 
     function _executeBasicTransfers(TransferParams memory params) private {
-        // Instead of using _withdrawCollateral directly, use the new function
+        // First withdraw collateral
+        _liquidatationWithdrawCollateralFromUser(params);
+
+        // Then repay user's debt with liquidator's debt tokens
+        _liquidationPaybackBorrowedAmount(params.debtToken, params.debtAmountToPay, params.user, params.liquidator);
+    }
+
+    function _liquidatationWithdrawCollateralFromUser(TransferParams memory params) private {
         (bool success,) = address(i_loanFi).call(
             abi.encodeWithSignature(
                 "liquidationWithdrawCollateral(address,uint256,address,address)",
@@ -511,9 +526,32 @@ contract LiquidationCore is Getters {
         if (!success) {
             revert Errors.TransferFailed();
         }
+    }
 
-        // Then repay user's debt with liquidator's debt tokens
-        _paybackBorrowedAmount(params.debtToken, params.debtAmountToPay, params.user);
+    /**
+     * @notice Repays borrowed amount during liquidation using liquidator's tokens
+     * @dev Uses transferFrom to take tokens directly from liquidator (msg.sender)
+     * @param token The token to repay
+     * @param amount The amount to repay
+     * @param onBehalfOf The user whose debt is being repaid
+     */
+    function _liquidationPaybackBorrowedAmount(
+        address token,
+        uint256 amount,
+        address onBehalfOf,
+        address liquidator
+    )
+        private
+    {
+        // Call LoanFi to decrease user's debt and handle transfer
+        (bool success,) = address(i_loanFi).call(
+            abi.encodeWithSignature(
+                "liquidationDecreaseDebt(address,uint256,address,address)", token, amount, onBehalfOf, liquidator
+            )
+        );
+        if (!success) {
+            revert Errors.TransferFailed();
+        }
     }
 
     // Virtual function with default empty implementation
