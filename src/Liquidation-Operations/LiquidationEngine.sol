@@ -226,7 +226,7 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         returns (bool hasPosition, address collateral, uint256 debtAmount)
     {
         uint256 debtInUsd = _getUsdValue(debtToken, userDebt);
-        uint256 totalBonusNeededInUsd = _calculateBonusNeeded(debtInUsd);
+        uint256 totalBonusNeededInUsd = getTenPercentBonus(debtInUsd);
 
         address[] memory allowedTokens = _getAllowedTokens();
         for (uint256 j = 0; j < allowedTokens.length; j++) {
@@ -252,14 +252,9 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         uint256 collateralBalance = _getCollateralBalanceOfUser(user, collateral);
         uint256 collateralValueInUsd = _getUsdValue(collateral, collateralBalance);
 
-        uint256 bonusFromThisCollateral =
-            _calculateBonusForCollateral(debtInUsd, collateralValueInUsd, totalBonusNeededInUsd);
+        uint256 bonusFromThisCollateral = _calculateBonusAmounts(totalBonusNeededInUsd, collateralValueInUsd, debtInUsd);
 
         return bonusFromThisCollateral < totalBonusNeededInUsd;
-    }
-
-    function _calculateBonusNeeded(uint256 debtInUsd) private view returns (uint256) {
-        return (debtInUsd * _getLiquidationBonus()) / _getLiquidationPrecision();
     }
 
     function _resizePositionArrays(
@@ -287,44 +282,20 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         });
     }
 
-    function _calculateBonusForCollateral(
-        uint256 debtInUsd,
-        uint256 collateralValueInUsd,
-        uint256 totalBonusNeededInUsd
-    )
-        private
-        pure
-        returns (uint256)
-    {
-        if (collateralValueInUsd <= debtInUsd) return 0;
-
-        uint256 excessCollateral = collateralValueInUsd - debtInUsd;
-        return excessCollateral > totalBonusNeededInUsd ? totalBonusNeededInUsd : excessCollateral;
-    }
-
     function _onProtocolLiquidation(TransferParams memory params) internal override {
-        // Calculate bonus metrics
-        (uint256 protocolFeeAmount, uint256 bonusShortfall) = _calculateProtocolFees(params);
-
-        emit ProtocolFeeCollected(params.collateral, protocolFeeAmount, bonusShortfall);
-
-        // Handle token swaps
-        _swapCollateralForDebtToken(params, protocolFeeAmount);
-        _swapAndFundAutomation(params.collateral, protocolFeeAmount);
-    }
-
-    function _calculateProtocolFees(TransferParams memory params)
-        private
-        view
-        returns (uint256 feeAmount, uint256 shortfall)
-    {
+        // Calculate what bonus was actually available vs needed
         uint256 debtInUsd = _getUsdValue(params.debtToken, params.debtAmountToPay);
-        uint256 totalBonusNeededInUsd = (debtInUsd * _getLiquidationBonus()) / _getLiquidationPrecision();
+        uint256 totalBonusNeededInUsd = getTenPercentBonus(debtInUsd);
         uint256 actualBonusInUsd = _getUsdValue(params.collateral, params.totalCollateralToSeize) - debtInUsd;
 
-        feeAmount = params.totalCollateralToSeize - params.debtAmountToPay;
-        shortfall = totalBonusNeededInUsd - actualBonusInUsd;
-        return (feeAmount, shortfall);
+        // Calculate protocol fee (whatever bonus was available)
+        uint256 protocolFeeAmount = params.totalCollateralToSeize - params.debtAmountToPay;
+
+        emit ProtocolFeeCollected(params.collateral, protocolFeeAmount, totalBonusNeededInUsd - actualBonusInUsd);
+
+        // Handle swaps and automation funding
+        _swapCollateralForDebtToken(params, protocolFeeAmount);
+        _swapAndFundAutomation(params.collateral, protocolFeeAmount);
     }
 
     function _swapCollateralForDebtToken(TransferParams memory params, uint256 /* protocolFeeAmount */ ) private {
