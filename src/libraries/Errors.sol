@@ -43,10 +43,16 @@ library Errors {
     error Liquidation__UserHasNotBorrowedToken();
     error Liquidations__OnlyProtocolCanLiquidateInsufficientBonus();
     error Liquidations__ProtocolLiquidationFailed();
+    error Liquidations__OnlyAutomationOrOwner();
 
     //////////////////////////////
     //     Withdraw Errors     //
     /////////////////////////////
     error Withdraw__UserDoesNotHaveThatManyTokens();
     error Withdraw__UserHasNoCollateralDeposited();
+
+    //////////////////////////////
+    //      LoanFi Errors      //
+    /////////////////////////////
+    error LoanFi__OnlyLiquidationEngine();
 }
