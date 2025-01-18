@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import { Script } from "forge-std/Script.sol";
 import { MockV3Aggregator } from "../test/mocks/MockV3Aggregator.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import { SwapLiquidatedTokens } from "src/SwapLiquidatedTokens.sol";
 
 contract HelperConfig is Script {
     // Define structs to hold all our network configuration data. We need to break up the structs because of stack too deep errors.
@@ -79,7 +80,7 @@ contract HelperConfig is Script {
             automationConfig: AutomationConfig({
                 // addresses for key components on sepolia
                 deployerKey: vm.envUint("PRIVATE_KEY"),
-                swapRouter: 0xb41b78Ce3D1BDEDE48A3d303eD2564F6d1F6fff0,
+                swapRouter: 0xb41b78Ce3D1BDEDE48A3d303eD2564F6d1F6fff0, //?? may need to change
                 automationRegistry: 0xE16Df59B887e3Caa439E0b29B42bA2e7976FD8b2,
                 upkeepId: vm.envUint("UPKEEP_ID")
             })
@@ -106,6 +107,9 @@ contract HelperConfig is Script {
         MockV3Aggregator linkUsdPriceFeed = new MockV3Aggregator(DECIMALS, LINK_USD_PRICE);
         ERC20Mock linkMock = new ERC20Mock();
 
+        // Deploy mock SwapRouter for local testing
+        SwapLiquidatedTokens swapRouter = new SwapLiquidatedTokens(address(0));
+
         vm.stopBroadcast();
 
         // Return config with mock addresses
@@ -118,7 +122,7 @@ contract HelperConfig is Script {
             tokens: Tokens({ weth: address(wethMock), wbtc: address(wbtcMock), link: address(linkMock) }),
             automationConfig: AutomationConfig({
                 deployerKey: DEFAULT_ANVIL_KEY,
-                swapRouter: address(0),
+                swapRouter: address(swapRouter), // Use the deployed mock SwapRouter
                 automationRegistry: address(0),
                 upkeepId: 0
             })
