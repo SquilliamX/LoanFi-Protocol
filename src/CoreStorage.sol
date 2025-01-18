@@ -64,7 +64,9 @@ contract CoreStorage is ReentrancyGuard {
         address indexed payer, address indexed onBehalfOf, address indexed token, uint256 amount
     );
 
-    event CollateralWithdrawn(address indexed token, uint256 amount, address indexed WithdrawnFrom, address WithdrawTo);
+    event CollateralWithdrawn(
+        address indexed token, uint256 indexed amount, address indexed WithdrawnFrom, address WithdrawTo
+    );
 
     ///////////////////
     //     Type     //
