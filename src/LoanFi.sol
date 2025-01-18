@@ -50,20 +50,20 @@ contract LoanFi is Withdraw {
         _withdrawCollateral(collateral, amount, user, recipient);
     }
 
-    function liquidationDecreaseDebt(
+    function liquidationPaybackBorrowedAmount(
         address token,
         uint256 amount,
         address user,
-        address payer
+        address liquidator
     )
         external
         OnlyLiquidationEngine
     {
-        // First decrease the debt (state change)
+        // Update state BEFORE external calls (CEI pattern)
         decreaseUserDebtAndTotalDebtBorrowed(user, token, amount);
 
-        // Then collect the payment
-        bool success = IERC20(token).transferFrom(payer, address(this), amount);
+        // Transfer tokens from liquidator to contract
+        bool success = IERC20(token).transferFrom(liquidator, address(this), amount);
         if (!success) {
             revert Errors.TransferFailed();
         }
