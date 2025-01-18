@@ -5,6 +5,7 @@ import { ILoanFi } from "../interfaces/ILoanFi.sol";
 import { Getters } from "./Getters.sol";
 import { Errors } from "src/libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Test, console } from "forge-std/Test.sol";
 
 contract LiquidationCore is Getters {
     /* 
@@ -63,6 +64,12 @@ contract LiquidationCore is Getters {
         address debtToken; // The borrowed token to be repaid
         uint256 debtAmountToPay; // Amount of debt to repay
         uint256 debtInUsd; // USD value of the debt
+    }
+
+    struct BonusCollateralInfo {
+        address token;
+        uint256 amountToTake;
+        uint256 bonusInUsd;
     }
 
     event UserLiquidated(address indexed collateral, address indexed userLiquidated, uint256 amountOfDebtPaid);
@@ -235,6 +242,7 @@ contract LiquidationCore is Getters {
      */
     function _calculateBonuses(BonusParams memory params)
         private
+        view
         returns (uint256 bonusFromThisCollateral, uint256 bonusFromOtherCollateral, uint256 totalBonusNeededInUsd)
     {
         // gets the usd value of the debt being repaid
@@ -254,7 +262,8 @@ contract LiquidationCore is Getters {
 
         // If primary collateral bonus insufficient, collect from other collateral
         if (bonusFromThisCollateral < totalBonusNeededInUsd) {
-            bonusFromOtherCollateral = _collectBonusFromOtherCollateral(
+            // We only need the first return value (bonusCollectedInUsd)
+            (bonusFromOtherCollateral,) = _collectBonusFromOtherCollateral(
                 params.user, params.collateral, totalBonusNeededInUsd - bonusFromThisCollateral
             );
         }
@@ -355,16 +364,20 @@ contract LiquidationCore is Getters {
         uint256 bonusNeededInUsd
     )
         private
-        returns (uint256 bonusCollectedInUsd)
+        view
+        returns (uint256 bonusCollectedInUsd, BonusCollateralInfo[] memory collateralsToPull)
     {
-        // 1. Calculate total value of user's other collateral (excluding the main one)
-        uint256 totalAvailableCollateralInUsd = _calculateAvailableCollateral(user, excludedCollateral);
-        if (totalAvailableCollateralInUsd == 0) return 0; // Exit if no other collateral
+        console.log("=== _collectBonusFromOtherCollateral ===");
+        console.log("Bonus needed in USD:", bonusNeededInUsd);
 
-        // 2. Get list of all allowed tokens in protocol
+        // Get list of all allowed tokens and their USD values
         address[] memory allowedTokens = _getAllowedTokens();
 
-        // 3. Loop through each allowed token
+        // Create array to store token values
+        CollateralData[] memory collaterals = new CollateralData[](allowedTokens.length);
+        uint256 validCollaterals = 0;
+
+        // First pass: gather data about available collateral
         for (uint256 i = 0; i < allowedTokens.length; i++) {
             address token = allowedTokens[i];
 
@@ -375,45 +388,75 @@ contract LiquidationCore is Getters {
             uint256 userBalance = _getCollateralBalanceOfUser(user, token);
             if (userBalance == 0) continue;
 
-            // Get USD value of user's balance of this token
-            uint256 collateralValueInUsd = _getUsdValue(token, userBalance);
+            uint256 valueInUsd = _getUsdValue(token, userBalance);
+            console.log("Token:", uint256(uint160(token)));
+            console.log("User balance:", userBalance);
+            console.log("USD value:", valueInUsd);
 
-            // 4. Calculate fair share of bonus from this token
-            // Example: If this token is 30% of total collateral, it provides 30% of needed bonus
-            uint256 bonusToTakeInUsd =
-                _calculateProportionalBonus(collateralValueInUsd, totalAvailableCollateralInUsd, bonusNeededInUsd);
+            if (valueInUsd == 0) continue;
 
-            // 5. Convert USD amount to actual token amount
-            uint256 tokenAmountToTake = _getTokenAmountFromUsd(token, bonusToTakeInUsd);
+            collaterals[validCollaterals] = CollateralData({
+                token: token,
+                excludedCollateral: excludedCollateral,
+                userBalance: userBalance,
+                valueInUsd: valueInUsd,
+                totalAvailable: 0
+            });
+            validCollaterals++;
+        }
 
-            // 6. Safety check: Don't take more than user has
-            if (tokenAmountToTake > userBalance) {
-                tokenAmountToTake = userBalance;
-                bonusToTakeInUsd = _getUsdValue(token, tokenAmountToTake);
-            }
-
-            // 7. If we can take some tokens, do the transfer
-            if (tokenAmountToTake > 0) {
-                // Create transfer params for the withdrawal
-                TransferParams memory params = TransferParams({
-                    collateral: token,
-                    debtToken: address(0), // not needed for this call
-                    user: user,
-                    recipient: address(this),
-                    debtAmountToPay: 0, // not needed for this call
-                    totalCollateralToSeize: tokenAmountToTake,
-                    liquidator: address(0) // not needed for this call
-                 });
-
-                _liquidatationWithdrawCollateralFromUser(params);
-                bonusCollectedInUsd += bonusToTakeInUsd;
-
-                // If we've collected enough bonus, stop
-                if (bonusCollectedInUsd >= bonusNeededInUsd) break;
+        // Sort collaterals by USD value (highest to lowest)
+        for (uint256 i = 0; i < validCollaterals - 1; i++) {
+            for (uint256 j = 0; j < validCollaterals - i - 1; j++) {
+                if (collaterals[j].valueInUsd < collaterals[j + 1].valueInUsd) {
+                    CollateralData memory temp = collaterals[j];
+                    collaterals[j] = collaterals[j + 1];
+                    collaterals[j + 1] = temp;
+                }
             }
         }
 
-        return bonusCollectedInUsd; // Return total USD value of bonus collected
+        // After sorting, log the order
+        console.log("=== Sorted Collaterals ===");
+        for (uint256 i = 0; i < validCollaterals; i++) {
+            console.log("Token:", uint256(uint160(collaterals[i].token)));
+            console.log("USD Value:", collaterals[i].valueInUsd);
+        }
+
+        // Initialize array to store collateral info
+        collateralsToPull = new BonusCollateralInfo[](validCollaterals);
+        uint256 collateralCount = 0;
+        uint256 remainingBonusNeeded = bonusNeededInUsd;
+
+        // Calculate amounts to take from each collateral
+        for (uint256 i = 0; i < validCollaterals && remainingBonusNeeded > 0; i++) {
+            CollateralData memory collateral = collaterals[i];
+
+            uint256 bonusToTakeInUsd =
+                remainingBonusNeeded > collateral.valueInUsd ? collateral.valueInUsd : remainingBonusNeeded;
+
+            // Convert bonus USD amount to token amount
+            uint256 tokenAmountToTake = _getTokenAmountFromUsd(collateral.token, bonusToTakeInUsd);
+
+            // Safety check: Don't take more than user has
+            if (tokenAmountToTake > collateral.userBalance) {
+                tokenAmountToTake = collateral.userBalance;
+                bonusToTakeInUsd = _getUsdValue(collateral.token, tokenAmountToTake);
+            }
+
+            if (tokenAmountToTake > 0) {
+                collateralsToPull[collateralCount] = BonusCollateralInfo({
+                    token: collateral.token,
+                    amountToTake: tokenAmountToTake,
+                    bonusInUsd: bonusToTakeInUsd
+                });
+                collateralCount++;
+                bonusCollectedInUsd += bonusToTakeInUsd;
+                remainingBonusNeeded -= bonusToTakeInUsd;
+            }
+        }
+
+        return (bonusCollectedInUsd, collateralsToPull);
     }
 
     function _calculateAvailableCollateral(
@@ -457,6 +500,56 @@ contract LiquidationCore is Getters {
         );
     }
 
+    // New struct to handle transfer calculations
+    struct TransferCalcResult {
+        uint256 debtInCollateralTerms;
+        uint256 bonusCollateral;
+        uint256 totalCollateralToSeize;
+        uint256 remainingDebtInUsd;
+        address recipient;
+    }
+
+    // Split calculation logic into a separate function
+    function _calculateTransferAmounts(
+        address user,
+        address collateral,
+        address liquidator,
+        uint256 debtInUsd,
+        uint256 bonusFromThisCollateral,
+        uint256 bonusFromOtherCollateral,
+        uint256 totalBonusNeededInUsd
+    )
+        private
+        view
+        returns (TransferCalcResult memory result)
+    {
+        // Convert debt to collateral terms
+        uint256 debtInCollateralTerms = _getTokenAmountFromUsd(collateral, debtInUsd);
+        uint256 userBalance = _getCollateralBalanceOfUser(user, collateral);
+
+        // Cap at user's balance
+        if (debtInCollateralTerms > userBalance) {
+            debtInCollateralTerms = userBalance;
+        }
+
+        // Calculate bonus
+        uint256 bonusCollateral = _getTokenAmountFromUsd(collateral, bonusFromThisCollateral);
+
+        // Calculate remaining debt
+        uint256 coveredDebtInUsd = _getUsdValue(collateral, debtInCollateralTerms);
+
+        return TransferCalcResult({
+            debtInCollateralTerms: debtInCollateralTerms,
+            bonusCollateral: bonusCollateral,
+            totalCollateralToSeize: debtInCollateralTerms + bonusCollateral,
+            remainingDebtInUsd: debtInUsd > coveredDebtInUsd ? debtInUsd - coveredDebtInUsd : 0,
+            recipient: _determineRecipient(
+                bonusFromThisCollateral + bonusFromOtherCollateral, totalBonusNeededInUsd, liquidator
+            )
+        });
+    }
+
+    // Main transfer handling function - now more concise
     function _handleTransfers(
         LiquidationParams memory params,
         CollateralData memory collateralData,
@@ -466,33 +559,108 @@ contract LiquidationCore is Getters {
     )
         private
     {
-        // Convert debt amount to collateral terms
         uint256 debtInUsd = _getUsdValue(params.debtToken, params.debtAmountToPay);
-        uint256 debtInCollateralTerms = _getTokenAmountFromUsd(collateralData.token, debtInUsd);
 
-        // Calculate bonus in collateral terms
-        uint256 bonusCollateral = _getTokenAmountFromUsd(collateralData.token, bonusFromThisCollateral);
-
-        // Total collateral to seize is debt + bonus
-        uint256 totalCollateralToSeize = debtInCollateralTerms + bonusCollateral;
-
-        // Determine recipient based on bonus availability
-        address recipient = _determineRecipient(
-            bonusFromThisCollateral + bonusFromOtherCollateral, totalBonusNeededInUsd, params.liquidator
+        // Get transfer amounts
+        TransferCalcResult memory calc = _calculateTransferAmounts(
+            params.user,
+            collateralData.token,
+            params.liquidator,
+            debtInUsd,
+            bonusFromThisCollateral,
+            bonusFromOtherCollateral,
+            totalBonusNeededInUsd
         );
 
-        // Execute transfers
-        TransferParams memory transferParams = TransferParams({
-            collateral: collateralData.token,
-            debtToken: params.debtToken,
-            user: params.user,
-            recipient: recipient,
-            debtAmountToPay: params.debtAmountToPay,
-            totalCollateralToSeize: totalCollateralToSeize,
-            liquidator: params.liquidator
-        });
+        // Execute primary transfer
+        _executeTransfers(
+            TransferParams({
+                collateral: collateralData.token,
+                debtToken: params.debtToken,
+                user: params.user,
+                recipient: calc.recipient,
+                debtAmountToPay: params.debtAmountToPay,
+                totalCollateralToSeize: calc.totalCollateralToSeize,
+                liquidator: params.liquidator
+            })
+        );
 
-        _executeTransfers(transferParams);
+        // Handle additional collateral if needed
+        if (calc.remainingDebtInUsd > 0 || bonusFromOtherCollateral > 0) {
+            _handleAdditionalCollateral(
+                params.user,
+                calc.recipient,
+                params.liquidator,
+                collateralData.token,
+                calc.remainingDebtInUsd,
+                totalBonusNeededInUsd,
+                bonusFromThisCollateral,
+                params.debtToken
+            );
+        }
+    }
+
+    // Add this struct to track debt repayment
+    struct DebtRepayment {
+        uint256 debtAmountPaid;
+        uint256 debtValueInUsd;
+    }
+
+    function _handleAdditionalCollateral(
+        address user,
+        address recipient,
+        address liquidator,
+        address excludedCollateral,
+        uint256 remainingDebtInUsd,
+        uint256 totalBonusNeededInUsd,
+        uint256 bonusFromThisCollateral,
+        address debtToken
+    )
+        private
+    {
+        (, BonusCollateralInfo[] memory collateralsToPull) = _collectBonusFromOtherCollateral(
+            user, excludedCollateral, remainingDebtInUsd + (totalBonusNeededInUsd - bonusFromThisCollateral)
+        );
+
+        for (uint256 i = 0; i < collateralsToPull.length; i++) {
+            if (collateralsToPull[i].amountToTake == 0) break;
+
+            // Calculate how much debt this collateral is covering
+            uint256 debtAmountForThisCollateral = 0;
+            uint256 collateralValueInUsd = _getUsdValue(collateralsToPull[i].token, collateralsToPull[i].amountToTake);
+
+            // If this collateral covers some debt, calculate the amount
+            if (remainingDebtInUsd > 0) {
+                if (collateralValueInUsd > collateralsToPull[i].bonusInUsd) {
+                    debtAmountForThisCollateral = collateralValueInUsd - collateralsToPull[i].bonusInUsd;
+                    remainingDebtInUsd = remainingDebtInUsd > debtAmountForThisCollateral
+                        ? remainingDebtInUsd - debtAmountForThisCollateral
+                        : 0;
+                }
+            }
+
+            // Calculate total amount to seize including bonus
+            uint256 totalCollateralToSeize;
+            if (collateralValueInUsd > 0) {
+                // If this collateral has value, calculate how much we need for debt+bonus
+                uint256 totalNeededInUsd = debtAmountForThisCollateral + collateralsToPull[i].bonusInUsd;
+                totalCollateralToSeize = _getTokenAmountFromUsd(collateralsToPull[i].token, totalNeededInUsd);
+            } else {
+                totalCollateralToSeize = collateralsToPull[i].amountToTake;
+            }
+
+            _executeTransfers(
+                TransferParams({
+                    collateral: collateralsToPull[i].token,
+                    debtToken: debtToken,
+                    user: user,
+                    recipient: recipient,
+                    debtAmountToPay: debtAmountForThisCollateral,
+                    totalCollateralToSeize: totalCollateralToSeize,
+                    liquidator: liquidator
+                })
+            );
+        }
     }
 
     /*
@@ -514,9 +682,9 @@ contract LiquidationCore is Getters {
         // Step 1: Handle basic transfers
         _executeBasicTransfers(params);
 
-        // Step 2: If protocol is recipient, call protocol handler
+        // Step 3: If protocol is recipient, call protocol handler
         if (params.recipient == address(this)) {
-            _onProtocolLiquidation(params); // Virtual function to be implemented by Engine
+            _onProtocolLiquidation(params);
         }
     }
 
@@ -529,18 +697,9 @@ contract LiquidationCore is Getters {
     }
 
     function _liquidatationWithdrawCollateralFromUser(TransferParams memory params) private {
-        (bool success,) = address(i_loanFi).call(
-            abi.encodeWithSignature(
-                "liquidationWithdrawCollateral(address,uint256,address,address)",
-                params.collateral,
-                params.totalCollateralToSeize,
-                params.user,
-                params.recipient
-            )
+        i_loanFi.liquidationWithdrawCollateral(
+            params.collateral, params.totalCollateralToSeize, params.user, params.recipient
         );
-        if (!success) {
-            revert Errors.TransferFailed();
-        }
     }
 
     /**
@@ -558,15 +717,7 @@ contract LiquidationCore is Getters {
     )
         private
     {
-        // Call LoanFi to decrease user's debt and handle transfer
-        (bool success,) = address(i_loanFi).call(
-            abi.encodeWithSignature(
-                "liquidationDecreaseDebt(address,uint256,address,address)", token, amount, onBehalfOf, liquidator
-            )
-        );
-        if (!success) {
-            revert Errors.TransferFailed();
-        }
+        i_loanFi.liquidationPaybackBorrowedAmount(token, amount, onBehalfOf, liquidator);
     }
 
     // Virtual function with default empty implementation
