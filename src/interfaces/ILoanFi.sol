@@ -15,16 +15,13 @@ interface ILoanFi {
     function getLiquidationBonus() external pure returns (uint256);
     function getPrecision() external pure returns (uint256);
 
-    // State changing functions
     function withdrawCollateral(address tokenCollateralAddress, uint256 amountCollateralToWithdraw) external;
     function paybackBorrowedAmount(address tokenToPayBack, uint256 amountToPayBack, address onBehalfOf) external;
 
-    // Add this function to the interface
     function revertIfHealthFactorIsBroken(address user) external view;
 
     function getAmountOfTokenBorrowed(address user, address token) external view returns (uint256);
 
-    // Add this function
     function getUserBatch(
         uint256 batchSize,
         uint256 offset
@@ -32,4 +29,22 @@ interface ILoanFi {
         external
         view
         returns (address[] memory users, uint256 totalUsers);
+
+    function liquidationDecreaseDebt(address user, address token, uint256 amount) external;
+
+    function liquidationWithdrawCollateral(
+        address collateral,
+        uint256 amount,
+        address user,
+        address recipient
+    )
+        external;
+
+    function liquidationPaybackBorrowedAmount(
+        address token,
+        uint256 amount,
+        address user,
+        address liquidator
+    )
+        external;
 }
