@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-import { Test } from "forge-std/Test.sol";
+import { Test, console } from "forge-std/Test.sol";
 import { HealthFactor } from "src/HealthFactor.sol";
 import { CoreStorage } from "src/CoreStorage.sol";
 import { Lending } from "src/Lending.sol";
@@ -68,11 +68,7 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Set up arrays with direct struct access
         tokenAddresses = [tokens.weth, tokens.wbtc, tokens.link];
-        feedAddresses = [
-            priceFeeds.wethUsdPriceFeed,
-            priceFeeds.wbtcUsdPriceFeed,
-            priceFeeds.linkUsdPriceFeed
-        ];
+        feedAddresses = [priceFeeds.wethUsdPriceFeed, priceFeeds.wbtcUsdPriceFeed, priceFeeds.linkUsdPriceFeed];
         automationValues = [automationConfig.deployerKey, automationConfig.upkeepId];
 
         // If we're on a local Anvil chain (chainId 31337), give our test user some ETH to work with
@@ -145,9 +141,21 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(allowedTokens[2], tokens.link, "Third token should be tokens.link");
 
         // Test price feed mappings
-        assertEq(coreStorage.getCollateralTokenPriceFeed(tokens.weth), priceFeeds.wethUsdPriceFeed, "tokens.weth price feed mismatch");
-        assertEq(coreStorage.getCollateralTokenPriceFeed(tokens.wbtc), priceFeeds.wbtcUsdPriceFeed, "tokens.wbtc price feed mismatch");
-        assertEq(coreStorage.getCollateralTokenPriceFeed(tokens.link), priceFeeds.linkUsdPriceFeed, "tokens.link price feed mismatch");
+        assertEq(
+            coreStorage.getCollateralTokenPriceFeed(tokens.weth),
+            priceFeeds.wethUsdPriceFeed,
+            "tokens.weth price feed mismatch"
+        );
+        assertEq(
+            coreStorage.getCollateralTokenPriceFeed(tokens.wbtc),
+            priceFeeds.wbtcUsdPriceFeed,
+            "tokens.wbtc price feed mismatch"
+        );
+        assertEq(
+            coreStorage.getCollateralTokenPriceFeed(tokens.link),
+            priceFeeds.linkUsdPriceFeed,
+            "tokens.link price feed mismatch"
+        );
     }
 
     function testGetCollateralBalanceOfUser() public UserDeposited {
@@ -300,13 +308,19 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Verify price feed mappings
         assertEq(
-            healthFactor.getCollateralTokenPriceFeed(tokens.weth), priceFeeds.wethUsdPriceFeed, "tokens.weth price feed mismatch"
+            healthFactor.getCollateralTokenPriceFeed(tokens.weth),
+            priceFeeds.wethUsdPriceFeed,
+            "tokens.weth price feed mismatch"
         );
         assertEq(
-            healthFactor.getCollateralTokenPriceFeed(tokens.wbtc), priceFeeds.wbtcUsdPriceFeed, "tokens.wbtc price feed mismatch"
+            healthFactor.getCollateralTokenPriceFeed(tokens.wbtc),
+            priceFeeds.wbtcUsdPriceFeed,
+            "tokens.wbtc price feed mismatch"
         );
         assertEq(
-            healthFactor.getCollateralTokenPriceFeed(tokens.link), priceFeeds.linkUsdPriceFeed, "tokens.link price feed mismatch"
+            healthFactor.getCollateralTokenPriceFeed(tokens.link),
+            priceFeeds.linkUsdPriceFeed,
+            "tokens.link price feed mismatch"
         );
     }
 
@@ -457,9 +471,21 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(allowedTokens[2], tokens.link, "Third token should be tokens.link");
 
         // Verify price feed mappings
-        assertEq(lending.getCollateralTokenPriceFeed(tokens.weth), priceFeeds.wethUsdPriceFeed, "tokens.weth price feed mismatch");
-        assertEq(lending.getCollateralTokenPriceFeed(tokens.wbtc), priceFeeds.wbtcUsdPriceFeed, "tokens.wbtc price feed mismatch");
-        assertEq(lending.getCollateralTokenPriceFeed(tokens.link), priceFeeds.linkUsdPriceFeed, "tokens.link price feed mismatch");
+        assertEq(
+            lending.getCollateralTokenPriceFeed(tokens.weth),
+            priceFeeds.wethUsdPriceFeed,
+            "tokens.weth price feed mismatch"
+        );
+        assertEq(
+            lending.getCollateralTokenPriceFeed(tokens.wbtc),
+            priceFeeds.wbtcUsdPriceFeed,
+            "tokens.wbtc price feed mismatch"
+        );
+        assertEq(
+            lending.getCollateralTokenPriceFeed(tokens.link),
+            priceFeeds.linkUsdPriceFeed,
+            "tokens.link price feed mismatch"
+        );
     }
 
     // testing deposit function
@@ -639,9 +665,21 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(allowedTokens[2], tokens.link, "Third token should be tokens.link");
 
         // Verify price feed mappings
-        assertEq(borrowing.getCollateralTokenPriceFeed(tokens.weth), priceFeeds.wethUsdPriceFeed, "tokens.weth price feed mismatch");
-        assertEq(borrowing.getCollateralTokenPriceFeed(tokens.wbtc), priceFeeds.wbtcUsdPriceFeed, "tokens.wbtc price feed mismatch");
-        assertEq(borrowing.getCollateralTokenPriceFeed(tokens.link), priceFeeds.linkUsdPriceFeed, "tokens.link price feed mismatch");
+        assertEq(
+            borrowing.getCollateralTokenPriceFeed(tokens.weth),
+            priceFeeds.wethUsdPriceFeed,
+            "tokens.weth price feed mismatch"
+        );
+        assertEq(
+            borrowing.getCollateralTokenPriceFeed(tokens.wbtc),
+            priceFeeds.wbtcUsdPriceFeed,
+            "tokens.wbtc price feed mismatch"
+        );
+        assertEq(
+            borrowing.getCollateralTokenPriceFeed(tokens.link),
+            priceFeeds.linkUsdPriceFeed,
+            "tokens.link price feed mismatch"
+        );
     }
 
     function testBorrowingWorksProperly() public UserDeposited {
@@ -1091,9 +1129,21 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(allowedTokens[2], tokens.link, "Third token should be tokens.link");
 
         // Verify price feed mappings
-        assertEq(withdraw.getCollateralTokenPriceFeed(tokens.weth), priceFeeds.wethUsdPriceFeed, "tokens.weth price feed mismatch");
-        assertEq(withdraw.getCollateralTokenPriceFeed(tokens.wbtc), priceFeeds.wbtcUsdPriceFeed, "tokens.wbtc price feed mismatch");
-        assertEq(withdraw.getCollateralTokenPriceFeed(tokens.link), priceFeeds.linkUsdPriceFeed, "tokens.link price feed mismatch");
+        assertEq(
+            withdraw.getCollateralTokenPriceFeed(tokens.weth),
+            priceFeeds.wethUsdPriceFeed,
+            "tokens.weth price feed mismatch"
+        );
+        assertEq(
+            withdraw.getCollateralTokenPriceFeed(tokens.wbtc),
+            priceFeeds.wbtcUsdPriceFeed,
+            "tokens.wbtc price feed mismatch"
+        );
+        assertEq(
+            withdraw.getCollateralTokenPriceFeed(tokens.link),
+            priceFeeds.linkUsdPriceFeed,
+            "tokens.link price feed mismatch"
+        );
     }
 
     modifier UserBorrowedAndRepaidDebt() {
@@ -1289,28 +1339,29 @@ contract LoanFi_IntegrationsTest is Test {
 
     function testLiquidationsConstructor() public { }
 
-    modifier UserCanBeLiquidatedWithNoBonus() {
-        // Start impersonating the test user
+    modifier UserCanBeLiquidatedWithBonusFromOtherCollaterals() {
+        // Mint tokens for liquidator
+        ERC20Mock(tokens.link).mint(liquidator, 5000e18);
+
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
+
         vm.startPrank(user);
-        // Approve the loanFi contract to spend user's tokens.weth
-        // User deposits $10,000
-        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        // User deposits all three collateral types
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT); // 5 WETH = $10,000
+        ERC20Mock(tokens.wbtc).approve(address(loanFi), 1e18); // 1 WBTC = $30,000
+        ERC20Mock(tokens.link).approve(address(loanFi), DEPOSIT_AMOUNT); // 5 LINK = $50
 
-        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT);
+        // Deposit all collaterals
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT); // $10,000
+        loanFi.depositCollateral(tokens.wbtc, 1e18); // $30k
+        loanFi.depositCollateral(tokens.link, DEPOSIT_AMOUNT); // $50
 
-        // Deposit collateral and borrow tokens.link in one transaction
-        // tokens.link is $10/token, user borrows 10, so thats $100 borrowed
-        loanFi.borrowFunds(tokens.link, LINK_AMOUNT_TO_BORROW);
-        // Stop impersonating the user
+        // Borrow LINK tokens
+        loanFi.borrowFunds(tokens.link, 2000e18); // Borrow 2000 LINK = $20,000
         vm.stopPrank();
 
-        // Set new ETH price to $20 (significant drop from original price)
-        int256 wethUsdUpdatedPrice = 20e8; // 1 ETH = $20
-
-        // we need $200 of collateral at all times if we have $100 of debt
-        // Update the ETH/USD price feed with new lower price
-        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(wethUsdUpdatedPrice);
-
+        // Crash WETH price to make user liquidatable, but keep other collateral valuable
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(10e8); // WETH = $10 (massive crash)
         _;
     }
 
@@ -1370,7 +1421,10 @@ contract LoanFi_IntegrationsTest is Test {
         loanFi.liquidate(user, tokens.weth, tokens.link, DEPOSIT_AMOUNT);
     }
 
-    function testLiquidationRevertsIfDebtAmountPaidExceedsCollateralAmount() public UserCanBeLiquidatedWithNoBonus {
+    function testLiquidationRevertsIfDebtAmountPaidExceedsCollateralAmount()
+        public
+        UserCanBeLiquidatedWithBonusFromOtherCollaterals
+    {
         uint256 tooMuchToLiquidate = 20e18;
         vm.prank(liquidator);
         vm.expectRevert(Errors.Liquidations__DebtAmountPaidExceedsBorrowedAmount.selector);
@@ -1440,8 +1494,10 @@ contract LoanFi_IntegrationsTest is Test {
         UserCanBeLiquidatedWithBonus
     {
         uint256 liquidatorBalanceBefore = ERC20Mock(tokens.weth).balanceOf(liquidator);
+
         uint256 expectedDebtAmountToPay = 100e18;
         uint256 expectedBonus = loanFi.getTokenAmountFromUsd(tokens.weth, loanFi.getUsdValue(tokens.link, 110e18));
+
         vm.startPrank(liquidator);
         ERC20Mock(tokens.link).approve(address(loanFi), expectedDebtAmountToPay);
         loanFi.liquidate(user, tokens.weth, tokens.link, expectedDebtAmountToPay);
@@ -1454,20 +1510,99 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(actualBonus, expectedBonus);
     }
 
-    function testLiquidationPaysLiquidatorBonusFromAllCollaterals() public UserCanBeLiquidatedWithNoBonus {
-        uint256 liquidatorBalanceBefore = ERC20Mock(tokens.weth).balanceOf(liquidator);
-        uint256 expectedDebtAmountToPay = 100e18;
-        uint256 expectedBonus = loanFi.getTokenAmountFromUsd(tokens.weth, loanFi.getUsdValue(tokens.link, 110e18));
+    function testLiquidationPaysLiquidatorBonusFromAllCollaterals()
+        public
+        UserCanBeLiquidatedWithBonusFromOtherCollaterals
+    {
+        // Log all relevant addresses
+        console.log("User address:", user);
+        console.log("Liquidator address:", liquidator);
+        console.log("LoanFi address:", address(loanFi));
+        console.log("LiquidationEngine address:", address(loanFi.liquidationEngine()));
+
+        // Log ERC20 token addresses
+        console.log("WETH token address:", tokens.weth);
+        console.log("WBTC token address:", tokens.wbtc);
+        console.log("LINK token address:", tokens.link);
+
+        // Log token balances
+        console.log("User WETH balance:", ERC20Mock(tokens.weth).balanceOf(user));
+        console.log("User WBTC balance:", ERC20Mock(tokens.wbtc).balanceOf(user));
+        console.log("User LINK balance:", ERC20Mock(tokens.link).balanceOf(user));
+
+        console.log("LoanFi WETH balance:", ERC20Mock(tokens.weth).balanceOf(address(loanFi)));
+        console.log("LoanFi WBTC balance:", ERC20Mock(tokens.wbtc).balanceOf(address(loanFi)));
+        console.log("LoanFi LINK balance:", ERC20Mock(tokens.link).balanceOf(address(loanFi)));
+
+        // Track liquidator's WBTC balance
+        uint256 liquidatorWbtcBalanceBefore =
+            loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(liquidator));
+        console.log("Liquidator WBTC balance before:", liquidatorWbtcBalanceBefore);
+
+        // Track liquidator's WETH balance
+        uint256 liquidatorWethBalanceBefore =
+            loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(liquidator));
+        console.log("Liquidator WETH balance before:", liquidatorWethBalanceBefore);
+
+        // Track liquidator's LINK balance
+        // uint256 liquidatorLinkBalanceBefore =
+        //     loanFi.getUsdValue(tokens.link, ERC20Mock(tokens.link).balanceOf(liquidator));
+        // console.log("Liquidator LINK balance before:", liquidatorLinkBalanceBefore);
+
+        // // Track user's WETH balance
+        // uint256 userWethBalanceBefore = loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(user));
+        // console.log("User WETH balance before:", userWethBalanceBefore);
+
+        // // Track user's WBTC balance
+        // uint256 userWbtcBalanceBefore = loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(user));
+        // console.log("User WBTC balance before:", userWbtcBalanceBefore);
+
+        // Calculate expected bonus (10% of $1,000 debt = $100 worth of WETH)
+        uint256 debtAmountToPay = 100e18; // 100 LINK
+        uint256 expectedBonus = loanFi.getUsdValue(tokens.link, 110e18); // 110% of debt value for 10% bonus
+        console.log("Expected bonus:", expectedBonus);
+
+        // Perform liquidation
         vm.startPrank(liquidator);
-        ERC20Mock(tokens.link).approve(address(loanFi), expectedDebtAmountToPay);
-        loanFi.liquidate(user, tokens.weth, tokens.link, expectedDebtAmountToPay);
+        ERC20Mock(tokens.link).approve(address(loanFi), debtAmountToPay);
+        loanFi.liquidate(user, tokens.weth, tokens.link, debtAmountToPay);
         vm.stopPrank();
-        uint256 liquidatorBalanceAfter = ERC20Mock(tokens.weth).balanceOf(liquidator);
 
-        uint256 actualBonus = liquidatorBalanceAfter - liquidatorBalanceBefore;
+        // Verify liquidator received the bonus
+        // Track liquidator's WBTC balance
+        uint256 liquidatorWbtcBalanceAfter =
+            loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(liquidator));
+        console.log("Liquidator WBTC balance after:", liquidatorWbtcBalanceAfter);
 
-        assertEq(actualBonus, expectedBonus);
-    } // we are here
+        // Track liquidator's WETH balance
+        uint256 liquidatorWethBalanceAfter =
+            loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(liquidator));
+        console.log("Liquidator WETH balance after:", liquidatorWethBalanceAfter);
+        
+        // // Track liquidator's LINK balance
+        // uint256 liquidatorLinkBalanceAfter =
+        //     loanFi.getUsdValue(tokens.link, ERC20Mock(tokens.link).balanceOf(liquidator));
+        // console.log("Liquidator LINK balance after:", liquidatorLinkBalanceAfter);
+
+        // // Track user's WETH balance
+        // uint256 userWethBalanceAfter = loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(user));
+        // console.log("User WETH balance after:", userWethBalanceAfter);
+
+        // // Track user's WBTC balance
+        // uint256 userWbtcBalanceAfter = loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(user));
+        // console.log("User WBTC balance after:", userWbtcBalanceAfter);
+
+        // Calculate bonus received in each token
+        uint256 wbtcBonusInUsd = liquidatorWbtcBalanceAfter - liquidatorWbtcBalanceBefore;
+        uint256 wethBonusInUsd = liquidatorWethBalanceAfter - liquidatorWethBalanceBefore;
+        // uint256 linkBonusInUsd = liquidatorLinkBalanceAfter - liquidatorLinkBalanceBefore;
+
+        uint256 actualBonus = wbtcBonusInUsd + wethBonusInUsd;
+        console.log("Actual bonus received:", actualBonus);
+
+        // The bonus should come from other collaterals since WETH value crashed
+        assertEq(actualBonus, expectedBonus, "Liquidator should receive bonus from other collaterals");
+    }
 
     function testLiquidationCompletedByProtocolWithBonus() public { }
 
@@ -1485,26 +1620,34 @@ contract LoanFi_IntegrationsTest is Test {
 
     function testLiquidationRevertsIfEndingHealthFactorIsWorseThanStarting() public { }
 
-    function testLiquidationRevertsLiquidationBreaksHealthFactor() public UserCanBeLiquidatedWithNoBonus {
-        uint256 expectedHealthFactor = 5e16;
+    function testLiquidationRevertsLiquidationMakesHealthFactorWorse() public LiquidLoanFi {
+        // 1. Setup: User deposits collateral and borrows
+        vm.startPrank(user);
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT);
 
+        // Borrow a smaller amount so we can test health factor break
+        uint256 borrowAmount = 50e18; // 50 LINK = $500 USD
+        loanFi.borrowFunds(tokens.link, borrowAmount);
+        vm.stopPrank();
+
+        // 2. Drop ETH price to make health factor < 1 but not too low
+        // Original ETH price is $2000, drop to $1000
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(100e8); // $1000 per ETH
+
+        // 3. Setup liquidator with full amount to repay
         vm.startPrank(liquidator);
+        ERC20Mock(tokens.link).mint(liquidator, 1000e18);
+        ERC20Mock(tokens.link).approve(address(loanFi), borrowAmount);
 
-        // Approve tokens.link for liquidation
-        ERC20Mock(tokens.link).approve(address(loanFi), 9e18);
+        // 4. Try to liquidate almost all collateral, which would leave user with:
+        // - Very little collateral but still some debt
+        // This should make health factor worse
+        vm.expectRevert(Errors.Liquidations__HealthFactorNotImproved.selector);
 
-        // This reverts because liquidating 9 tokens.link would leave user with:
-        // - 0.05 tokens.weth ($1 at $20/ETH) as collateral
-        // - 1 tokens.link ($10) still borrowed
-        // Making health factor = 0.05 which is < 1
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Errors.HealthFactor__BreaksHealthFactor.selector,
-                expectedHealthFactor // 0.05
-            )
-        );
-        loanFi.liquidate(user, tokens.weth, tokens.link, 9e18);
-
+        // Try to liquidate a small amount that would leave user in worse position
+        uint256 debtToRepay = borrowAmount / 10; // Only repay 10% of debt
+        loanFi.liquidate(user, tokens.weth, tokens.link, debtToRepay);
         vm.stopPrank();
     }
 
@@ -1545,8 +1688,20 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(allowedTokens[2], tokens.link, "Third token should be tokens.link");
 
         // Verify price feed mappings
-        assertEq(loanFi.getCollateralTokenPriceFeed(tokens.weth), priceFeeds.wethUsdPriceFeed, "tokens.weth price feed mismatch");
-        assertEq(loanFi.getCollateralTokenPriceFeed(tokens.wbtc), priceFeeds.wbtcUsdPriceFeed, "tokens.wbtc price feed mismatch");
-        assertEq(loanFi.getCollateralTokenPriceFeed(tokens.link), priceFeeds.linkUsdPriceFeed, "tokens.link price feed mismatch");
+        assertEq(
+            loanFi.getCollateralTokenPriceFeed(tokens.weth),
+            priceFeeds.wethUsdPriceFeed,
+            "tokens.weth price feed mismatch"
+        );
+        assertEq(
+            loanFi.getCollateralTokenPriceFeed(tokens.wbtc),
+            priceFeeds.wbtcUsdPriceFeed,
+            "tokens.wbtc price feed mismatch"
+        );
+        assertEq(
+            loanFi.getCollateralTokenPriceFeed(tokens.link),
+            priceFeeds.linkUsdPriceFeed,
+            "tokens.link price feed mismatch"
+        );
     }
 }
