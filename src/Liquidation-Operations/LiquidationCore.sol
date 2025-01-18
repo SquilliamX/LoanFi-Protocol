@@ -367,6 +367,11 @@ contract LiquidationCore is Getters {
         view
         returns (uint256 bonusCollectedInUsd, BonusCollateralInfo[] memory collateralsToPull)
     {
+        // Early return if no bonus is needed
+        if (bonusNeededInUsd == 0) {
+            return (0, new BonusCollateralInfo[](0));
+        }
+
         console.log("=== _collectBonusFromOtherCollateral ===");
         console.log("Bonus needed in USD:", bonusNeededInUsd);
 
@@ -376,6 +381,7 @@ contract LiquidationCore is Getters {
         // Create array to store token values
         CollateralData[] memory collaterals = new CollateralData[](allowedTokens.length);
         uint256 validCollaterals = 0;
+        uint256 totalCollateralValueInUsd = 0;
 
         // First pass: gather data about available collateral
         for (uint256 i = 0; i < allowedTokens.length; i++) {
@@ -389,20 +395,27 @@ contract LiquidationCore is Getters {
             if (userBalance == 0) continue;
 
             uint256 valueInUsd = _getUsdValue(token, userBalance);
+            if (valueInUsd == 0) continue;
+
             console.log("Token:", uint256(uint160(token)));
             console.log("User balance:", userBalance);
             console.log("USD value:", valueInUsd);
 
-            if (valueInUsd == 0) continue;
+            totalCollateralValueInUsd += valueInUsd;
 
             collaterals[validCollaterals] = CollateralData({
                 token: token,
                 excludedCollateral: excludedCollateral,
                 userBalance: userBalance,
                 valueInUsd: valueInUsd,
-                totalAvailable: 0
+                totalAvailable: totalCollateralValueInUsd
             });
             validCollaterals++;
+        }
+
+        // Early return if no valid collateral found or total value is 0
+        if (validCollaterals == 0 || totalCollateralValueInUsd == 0) {
+            return (0, new BonusCollateralInfo[](0));
         }
 
         // Sort collaterals by USD value (highest to lowest)
@@ -414,13 +427,6 @@ contract LiquidationCore is Getters {
                     collaterals[j + 1] = temp;
                 }
             }
-        }
-
-        // After sorting, log the order
-        console.log("=== Sorted Collaterals ===");
-        for (uint256 i = 0; i < validCollaterals; i++) {
-            console.log("Token:", uint256(uint160(collaterals[i].token)));
-            console.log("USD Value:", collaterals[i].valueInUsd);
         }
 
         // Initialize array to store collateral info
@@ -435,8 +441,12 @@ contract LiquidationCore is Getters {
             uint256 bonusToTakeInUsd =
                 remainingBonusNeeded > collateral.valueInUsd ? collateral.valueInUsd : remainingBonusNeeded;
 
+            // Skip if no bonus to take
+            if (bonusToTakeInUsd == 0) continue;
+
             // Convert bonus USD amount to token amount
             uint256 tokenAmountToTake = _getTokenAmountFromUsd(collateral.token, bonusToTakeInUsd);
+            if (tokenAmountToTake == 0) continue;
 
             // Safety check: Don't take more than user has
             if (tokenAmountToTake > collateral.userBalance) {
