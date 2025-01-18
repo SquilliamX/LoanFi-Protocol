@@ -47,26 +47,6 @@ contract DeployLoanFi is Script {
         // Create new instance of HelperConfig to get network-specific addresses
         // This will either return mock addresses for local testing or real addresses for testnet
         helperConfig = new HelperConfig();
-        // Get all the network configuration values using the destructuring syntax
-        // (
-        //     // wethUsdPriceFeed: Price feed for ETH/USD
-        //     address wethUsdPriceFeed,
-        //     // wbtcUsdPriceFeed: Price feed for BTC/USD
-        //     address wbtcUsdPriceFeed,
-        //     // linkUsdPriceFeed: price feed for LINK/USD
-        //     address linkUsdPriceFeed,
-        //     // weth: WETH token address
-        //     address weth,
-        //     // wbtc: WBTC token address
-        //     address wbtc,
-        //     // link: LINK token address
-        //     address link,
-        //     // deployerKey: Private key for deployment depending on chain we deploy to
-        //     uint256 _deployerKey,
-        //     address swapRouter,
-        //     address automationRegistry,
-        //     uint256 upkeepId
-        // ) = helperConfig.activeNetworkConfig();
 
         (
             HelperConfig.PriceFeeds memory priceFeeds,
@@ -93,10 +73,10 @@ contract DeployLoanFi is Script {
     function deployContracts() private {
         vm.startBroadcast(s_deployerKey);
 
-        // Deploy main protocol
+        // Deploy main protocol with SwapRouter
         loanFi = new LoanFi(tokenAddresses, priceFeedAddresses, s_swapRouter, s_automationRegistry, s_upkeepId);
 
-        // LiquidationEngine is now deployed by LoanFi constructor
+        // Deploy automation with LiquidationEngine from LoanFi
         liquidationAutomation = new LiquidationAutomation(address(loanFi.liquidationEngine()));
 
         vm.stopBroadcast();
