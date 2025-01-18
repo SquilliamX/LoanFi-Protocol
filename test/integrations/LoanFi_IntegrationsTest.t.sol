@@ -20,6 +20,7 @@ import { MockBorrowing } from "test/mocks/MockBorrowing.sol";
 import { OracleLib } from "src/libraries/OracleLib.sol";
 import { Borrowing } from "src/Borrowing.sol";
 import { MockWithdraw } from "test/mocks/MockWithdraw.sol";
+import { Ownable } from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 contract LoanFi_IntegrationsTest is Test {
     LoanFi loanFi;
@@ -52,7 +53,11 @@ contract LoanFi_IntegrationsTest is Test {
         address indexed payer, address indexed onBehalfOf, address indexed token, uint256 amount
     );
 
-    event CollateralWithdrawn(address indexed token, uint256 amount, address indexed WithdrawnFrom, address WithdrawTo);
+    event CollateralWithdrawn(
+        address indexed token, uint256 indexed amount, address indexed WithdrawnFrom, address WithdrawTo
+    );
+
+    event UserLiquidated(address indexed collateral, address indexed userLiquidated, uint256 amountOfDebtPaid);
 
     function setUp() external {
         // Create a new instance of the deployment script
@@ -1337,7 +1342,37 @@ contract LoanFi_IntegrationsTest is Test {
     //  Liquidation Tests  //
     /////////////////////////
 
-    function testLiquidationsConstructor() public { }
+    function testLiquidationsConstructor() public LiquidLoanFi {
+        // Create new arrays for tokens and price feeds
+        address[] memory testTokens = new address[](3);
+        testTokens[0] = tokens.weth;
+        testTokens[1] = tokens.wbtc;
+        testTokens[2] = tokens.link;
+
+        address[] memory testFeeds = new address[](3);
+        testFeeds[0] = priceFeeds.wethUsdPriceFeed;
+        testFeeds[1] = priceFeeds.wbtcUsdPriceFeed;
+        testFeeds[2] = priceFeeds.linkUsdPriceFeed;
+
+        // Deploy new LoanFi instance
+        LoanFi newLoanFi = new LoanFi(
+            testTokens,
+            testFeeds,
+            address(0), // Mock swap router
+            address(0), // Mock automation registry
+            0 // Mock upkeep ID
+        );
+
+        // Deploy new LiquidationCore instance
+        LiquidationCore liquidationCore = new LiquidationCore(address(newLoanFi));
+
+        // Verify LoanFi address is set correctly by checking a getter function
+        uint256 minimumHealthFactor = liquidationCore.getHealthFactor(user);
+        assertEq(minimumHealthFactor, newLoanFi.getHealthFactor(user));
+
+        // Verify owner is set correctly (inherited from Ownable)
+        assertEq(liquidationCore.owner(), address(this));
+    }
 
     modifier UserCanBeLiquidatedWithBonusFromOtherCollaterals() {
         // Mint tokens for liquidator
@@ -1425,10 +1460,15 @@ contract LoanFi_IntegrationsTest is Test {
         public
         UserCanBeLiquidatedWithBonusFromOtherCollaterals
     {
-        uint256 tooMuchToLiquidate = 20e18;
-        vm.prank(liquidator);
+        uint256 tooMuchToLiquidate = 3000e18;
+
+        // Need to approve LoanFi to spend liquidator's LINK tokens
+        vm.startPrank(liquidator);
+        ERC20Mock(tokens.link).approve(address(loanFi), tooMuchToLiquidate);
+
         vm.expectRevert(Errors.Liquidations__DebtAmountPaidExceedsBorrowedAmount.selector);
         loanFi.liquidate(user, tokens.weth, tokens.link, tooMuchToLiquidate);
+        vm.stopPrank();
     }
 
     function testLiquidationRevertsIfLiquidatorDoesNothaveEnoughTokens() public LiquidLoanFi {
@@ -1510,30 +1550,10 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(actualBonus, expectedBonus);
     }
 
-    function testLiquidationPaysLiquidatorBonusFromAllCollaterals()
+    function testLiquidationPaysLiquidatorBonusFromOtherCollateralBTC()
         public
         UserCanBeLiquidatedWithBonusFromOtherCollaterals
     {
-        // Log all relevant addresses
-        console.log("User address:", user);
-        console.log("Liquidator address:", liquidator);
-        console.log("LoanFi address:", address(loanFi));
-        console.log("LiquidationEngine address:", address(loanFi.liquidationEngine()));
-
-        // Log ERC20 token addresses
-        console.log("WETH token address:", tokens.weth);
-        console.log("WBTC token address:", tokens.wbtc);
-        console.log("LINK token address:", tokens.link);
-
-        // Log token balances
-        console.log("User WETH balance:", ERC20Mock(tokens.weth).balanceOf(user));
-        console.log("User WBTC balance:", ERC20Mock(tokens.wbtc).balanceOf(user));
-        console.log("User LINK balance:", ERC20Mock(tokens.link).balanceOf(user));
-
-        console.log("LoanFi WETH balance:", ERC20Mock(tokens.weth).balanceOf(address(loanFi)));
-        console.log("LoanFi WBTC balance:", ERC20Mock(tokens.wbtc).balanceOf(address(loanFi)));
-        console.log("LoanFi LINK balance:", ERC20Mock(tokens.link).balanceOf(address(loanFi)));
-
         // Track liquidator's WBTC balance
         uint256 liquidatorWbtcBalanceBefore =
             loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(liquidator));
@@ -1544,22 +1564,17 @@ contract LoanFi_IntegrationsTest is Test {
             loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(liquidator));
         console.log("Liquidator WETH balance before:", liquidatorWethBalanceBefore);
 
-        // Track liquidator's LINK balance
-        // uint256 liquidatorLinkBalanceBefore =
-        //     loanFi.getUsdValue(tokens.link, ERC20Mock(tokens.link).balanceOf(liquidator));
-        // console.log("Liquidator LINK balance before:", liquidatorLinkBalanceBefore);
+        // Track user's WETH balance before
+        uint256 userWethBalanceBefore = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        console.log("User deposited WETH balance before:", userWethBalanceBefore);
 
-        // // Track user's WETH balance
-        // uint256 userWethBalanceBefore = loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(user));
-        // console.log("User WETH balance before:", userWethBalanceBefore);
+        // Track user's WBTC balance
+        uint256 userWbtcBalanceBefore = loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(user));
+        console.log("User WBTC balance before:", userWbtcBalanceBefore);
 
-        // // Track user's WBTC balance
-        // uint256 userWbtcBalanceBefore = loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(user));
-        // console.log("User WBTC balance before:", userWbtcBalanceBefore);
-
-        // Calculate expected bonus (10% of $1,000 debt = $100 worth of WETH)
-        uint256 debtAmountToPay = 100e18; // 100 LINK
-        uint256 expectedBonus = loanFi.getUsdValue(tokens.link, 110e18); // 110% of debt value for 10% bonus
+        // Calculate expected bonus (10% of $20,000 debt = $2000 USD)
+        uint256 debtAmountToPay = 2000e18; // 2000 LINK
+        uint256 expectedBonus = loanFi.getUsdValue(tokens.link, 2200e18); // 110% of debt value for 10% bonus / the amount is 2200e18 because we are expect to receive 2200 as the reward in a different collateral token
         console.log("Expected bonus:", expectedBonus);
 
         // Perform liquidation
@@ -1578,47 +1593,223 @@ contract LoanFi_IntegrationsTest is Test {
         uint256 liquidatorWethBalanceAfter =
             loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(liquidator));
         console.log("Liquidator WETH balance after:", liquidatorWethBalanceAfter);
-        
-        // // Track liquidator's LINK balance
-        // uint256 liquidatorLinkBalanceAfter =
-        //     loanFi.getUsdValue(tokens.link, ERC20Mock(tokens.link).balanceOf(liquidator));
-        // console.log("Liquidator LINK balance after:", liquidatorLinkBalanceAfter);
 
-        // // Track user's WETH balance
-        // uint256 userWethBalanceAfter = loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(user));
-        // console.log("User WETH balance after:", userWethBalanceAfter);
+        // Track user's WETH balance after
+        uint256 userWethBalanceAfter = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        console.log("User deposited WETH balance after:", userWethBalanceAfter);
 
-        // // Track user's WBTC balance
-        // uint256 userWbtcBalanceAfter = loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(user));
-        // console.log("User WBTC balance after:", userWbtcBalanceAfter);
+        // Track user's WBTC balance
+        uint256 userWbtcBalanceAfter = loanFi.getUsdValue(tokens.wbtc, ERC20Mock(tokens.wbtc).balanceOf(user));
+        console.log("User WBTC balance after:", userWbtcBalanceAfter);
 
         // Calculate bonus received in each token
         uint256 wbtcBonusInUsd = liquidatorWbtcBalanceAfter - liquidatorWbtcBalanceBefore;
         uint256 wethBonusInUsd = liquidatorWethBalanceAfter - liquidatorWethBalanceBefore;
-        // uint256 linkBonusInUsd = liquidatorLinkBalanceAfter - liquidatorLinkBalanceBefore;
 
         uint256 actualBonus = wbtcBonusInUsd + wethBonusInUsd;
         console.log("Actual bonus received:", actualBonus);
 
-        // The bonus should come from other collaterals since WETH value crashed
-        assertEq(actualBonus, expectedBonus, "Liquidator should receive bonus from other collaterals");
+        // Allow for a small rounding difference (0.00000000000009% difference)
+        uint256 tolerance = 20_000; // 20,000 wei tolerance
+        assertApproxEqAbs(
+            actualBonus, expectedBonus, tolerance, "Liquidator should receive bonus from other collaterals"
+        );
+
+        // Check that user's deposited WETH balance decreased to 0 after liquidation
+        assertEq(userWethBalanceAfter, 0, "User being liquidated's deposited WETH balance should be 0");
+
+        // Check that the balance actually decreased
+        assert(userWethBalanceBefore > userWethBalanceAfter);
     }
 
-    function testLiquidationCompletedByProtocolWithBonus() public { }
+    function testLiquidationPaysLiquidatorBonusFromOtherCollateralLINK() public {
+        // Mint tokens for liquidator
+        ERC20Mock(tokens.link).mint(liquidator, 5000e18);
 
-    function testLiquidationCompletedByProtocolWithNoBonus() public { }
+        // Mint tokens for user
+        ERC20Mock(tokens.link).mint(user, 3000e18);
 
-    function testLiquidationByLiquidatorRevertsIfNoBonusAvailable() public { }
+        uint256 amountOfLinkToDeposit = 3000e18;
 
-    function testLiquidationEmitsEvent() public { }
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
 
-    function testLiquidationRevertsIfTransferFails() public { }
+        vm.startPrank(user);
+        // User deposits all two collateral types
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT); // 5 WETH = $10,000
+        ERC20Mock(tokens.link).approve(address(loanFi), amountOfLinkToDeposit); // 5 LINK = $50
 
-    function testLiquidationDecreasesUsersBorrowedAmount() public { }
+        // Deposit collaterals
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT); // $10,000
+        loanFi.depositCollateral(tokens.link, amountOfLinkToDeposit); // $50
 
-    function testLiquidationDecreasesUsersCollateral() public { }
+        // Borrow LINK tokens
+        loanFi.borrowFunds(tokens.link, 2000e18); // Borrow 2000 LINK = $20,000
+        vm.stopPrank();
 
-    function testLiquidationRevertsIfEndingHealthFactorIsWorseThanStarting() public { }
+        // Crash WETH price to make user liquidatable, but keep other collateral valuable
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(10e8); // WETH = $10 (massive crash)
+
+        // Track liquidator's LINK balance
+        uint256 liquidatorLinkBalanceBefore =
+            loanFi.getUsdValue(tokens.link, ERC20Mock(tokens.link).balanceOf(liquidator));
+        console.log("Liquidator LINK balance before:", liquidatorLinkBalanceBefore);
+
+        // Track liquidator's WETH balance
+        uint256 liquidatorWethBalanceBefore =
+            loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(liquidator));
+        console.log("Liquidator WETH balance before:", liquidatorWethBalanceBefore);
+
+        // Track user's WETH balance before
+        uint256 userWethBalanceBefore = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        console.log("User deposited WETH balance before:", userWethBalanceBefore);
+
+        // Track user's LINK balance
+        uint256 userLinkBalanceBefore = loanFi.getUsdValue(tokens.link, ERC20Mock(tokens.link).balanceOf(user));
+        console.log("User WBTC balance before:", userLinkBalanceBefore);
+
+        // Calculate expected bonus (10% of $20,000 debt = $2000 USD)
+        uint256 debtAmountToPay = 2000e18; // 2000 LINK
+        uint256 expectedBonus = loanFi.getUsdValue(tokens.link, 200e18); // 10% bonus - we expect 200 because this is the 10% reward
+        console.log("Expected bonus:", expectedBonus);
+
+        // Perform liquidation
+        vm.startPrank(liquidator);
+        ERC20Mock(tokens.link).approve(address(loanFi), debtAmountToPay);
+        loanFi.liquidate(user, tokens.weth, tokens.link, debtAmountToPay);
+        vm.stopPrank();
+
+        // Verify liquidator received the bonus
+        // Track liquidator's LINK balance
+        uint256 liquidatorLinkBalanceAfter =
+            loanFi.getUsdValue(tokens.link, ERC20Mock(tokens.link).balanceOf(liquidator));
+        console.log("Liquidator LINK balance after:", liquidatorLinkBalanceAfter);
+
+        // Track liquidator's WETH balance
+        uint256 liquidatorWethBalanceAfter =
+            loanFi.getUsdValue(tokens.weth, ERC20Mock(tokens.weth).balanceOf(liquidator));
+        console.log("Liquidator WETH balance after:", liquidatorWethBalanceAfter);
+
+        // Track user's WETH balance after
+        uint256 userWethBalanceAfter = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        console.log("User deposited WETH balance after:", userWethBalanceAfter);
+
+        // Track user's LINK balance
+        uint256 userLinkBalanceAfter = loanFi.getUsdValue(tokens.link, ERC20Mock(tokens.link).balanceOf(user));
+        console.log("User LINK balance after:", userLinkBalanceAfter);
+
+        // Calculate bonus received in each token
+        uint256 linkBonusInUsd = liquidatorLinkBalanceAfter - liquidatorLinkBalanceBefore;
+        uint256 wethBonusInUsd = liquidatorWethBalanceAfter - liquidatorWethBalanceBefore;
+
+        uint256 actualBonus = linkBonusInUsd + wethBonusInUsd;
+        console.log("Actual bonus received:", actualBonus);
+
+        assertEq(actualBonus, expectedBonus, "Liquidator should receive bonus from other collaterals");
+
+        // Check that user's deposited WETH balance decreased to 0 after liquidation
+        assertEq(userWethBalanceAfter, 0, "User being liquidated's deposited WETH balance should be 0");
+
+        // Check that the balance actually decreased
+        assert(userWethBalanceBefore > userWethBalanceAfter);
+    }
+
+    function testLiquidationByLiquidatorRevertsIfNoBonusAvailable() public {
+        uint256 debtAmountToPay = 50e18; // 100 LINK
+
+        // Mint tokens for liquidator
+        ERC20Mock(tokens.link).mint(liquidator, 5000e18);
+
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
+
+        vm.startPrank(user);
+        // User deposits all three collateral types
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT); // 5 WETH = $10,000
+
+        // Deposit all collaterals
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT); // $10,000
+
+        // Borrow LINK tokens
+        loanFi.borrowFunds(tokens.link, 50e18); // Borrow 2000 LINK = $500
+        vm.stopPrank();
+
+        // Crash WETH price to make user liquidatable, but keep other collateral valuable
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(10e8); // WETH = $10 (massive crash)
+
+        // Perform liquidation
+        vm.startPrank(liquidator);
+        ERC20Mock(tokens.link).approve(address(loanFi), debtAmountToPay);
+        vm.expectRevert(Errors.Liquidations__OnlyProtocolCanLiquidateInsufficientBonus.selector);
+        loanFi.liquidate(user, tokens.weth, tokens.link, debtAmountToPay);
+        vm.stopPrank();
+    }
+
+    function testLiquidationEmitsEvent() public LiquidLoanFi UserCanBeLiquidatedWithBonus {
+        uint256 liquidatorBalanceBefore = ERC20Mock(tokens.weth).balanceOf(liquidator);
+
+        uint256 debtAmountToPay = 100e18;
+        uint256 expectedBonus = loanFi.getTokenAmountFromUsd(tokens.weth, loanFi.getUsdValue(tokens.link, 110e18));
+
+        vm.startPrank(liquidator);
+        ERC20Mock(tokens.link).approve(address(loanFi), debtAmountToPay);
+
+        // Set up the event expectation with LiquidationEngine's address
+        vm.expectEmit(true, true, true, false, address(loanFi.liquidationEngine()));
+        emit UserLiquidated(tokens.weth, user, debtAmountToPay);
+        loanFi.liquidate(user, tokens.weth, tokens.link, debtAmountToPay);
+        vm.stopPrank();
+
+        uint256 liquidatorBalanceAfter = ERC20Mock(tokens.weth).balanceOf(liquidator);
+
+        uint256 actualBonus = liquidatorBalanceAfter - liquidatorBalanceBefore;
+
+        assertEq(actualBonus, expectedBonus);
+    }
+
+    function testLiquidationDecreasesUsersBorrowedAmount() public LiquidLoanFi UserCanBeLiquidatedWithBonus { 
+        uint256 liquidatorBalanceBefore = ERC20Mock(tokens.weth).balanceOf(liquidator);
+
+        uint256 debtAmountToPay = 100e18;
+        uint256 expectedBonus = loanFi.getTokenAmountFromUsd(tokens.weth, loanFi.getUsdValue(tokens.link, 110e18));
+
+        vm.startPrank(liquidator);
+        ERC20Mock(tokens.link).approve(address(loanFi), debtAmountToPay);
+        
+        loanFi.liquidate(user, tokens.weth, tokens.link, debtAmountToPay);
+        vm.stopPrank();
+
+        uint256 liquidatorBalanceAfter = ERC20Mock(tokens.weth).balanceOf(liquidator);
+
+        uint256 actualBonus = liquidatorBalanceAfter - liquidatorBalanceBefore;
+
+        assertEq(actualBonus, expectedBonus);
+        assertEq(loanFi.getAmountOfTokenBorrowed(user, tokens.link), 0);
+    }
+
+    function testLiquidationDecreasesUsersCollateral() public LiquidLoanFi UserCanBeLiquidatedWithBonus { 
+         uint256 liquidatorBalanceBefore = ERC20Mock(tokens.weth).balanceOf(liquidator);
+
+        uint256 debtAmountToPay = 100e18;
+        uint256 expectedBonus = loanFi.getTokenAmountFromUsd(tokens.weth, loanFi.getUsdValue(tokens.link, 110e18));
+        uint256 usersCollateralBefore = loanFi.getCollateralBalanceOfUser(user, tokens.weth); 
+        
+        uint256 expectedAmountOfCollateralLeft = usersCollateralBefore - expectedBonus;
+
+        vm.startPrank(liquidator);
+        ERC20Mock(tokens.link).approve(address(loanFi), debtAmountToPay);
+        
+        loanFi.liquidate(user, tokens.weth, tokens.link, debtAmountToPay);
+        vm.stopPrank();
+
+        uint256 liquidatorBalanceAfter = ERC20Mock(tokens.weth).balanceOf(liquidator);
+
+        uint256 actualBonus = liquidatorBalanceAfter - liquidatorBalanceBefore;
+
+        uint256 usersCollateralAfter = loanFi.getCollateralBalanceOfUser(user, tokens.weth); 
+
+
+        assertEq(actualBonus, expectedBonus);
+        assertEq(usersCollateralAfter, expectedAmountOfCollateralLeft);
+    }
 
     function testLiquidationRevertsLiquidationMakesHealthFactorWorse() public LiquidLoanFi {
         // 1. Setup: User deposits collateral and borrows
@@ -1651,7 +1842,19 @@ contract LoanFi_IntegrationsTest is Test {
         vm.stopPrank();
     }
 
-    function testIfBonusIsLessThanFivePercentProtocolAutomaticallyLiquidates() public { }
+    ////////////////////////////////////
+    //  LiquidationAutomation Tests  //
+    ///////////////////////////////////
+
+    function testLiquidationCompletedByProtocolWithBonus() public { }
+
+    function testLiquidationCompletedByProtocolWithNoBonus() public { }
+
+     function testIfBonusIsLessThanFivePercentProtocolAutomaticallyLiquidates() public { }
+
+    ////////////////////////////////////
+    //   UniswapV3 TokenSwap Tests   //
+    //////////////////////////////////
 
     /////////////////////
     //  LoanFi Tests  //
