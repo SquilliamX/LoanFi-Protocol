@@ -6,7 +6,6 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IAutomationRegistryInterface } from "src/interfaces/IAutomationRegistryInterface.sol";
 import { SwapLiquidatedTokens } from "src/SwapLiquidatedTokens.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { LiquidationCore } from "./LiquidationCore.sol";
 import { Errors } from "src/libraries/Errors.sol";
@@ -98,6 +97,13 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         i_upkeepId = upkeepId;
     }
 
+    modifier onlyProtocolOwnerOrAutomation() {
+        if (!(msg.sender == address(i_automationRegistry) || msg.sender == ILoanFi(i_loanFi).owner())) {
+            revert Errors.Liquidations__OnlyProtocolOwnerOrAutomation();
+        }
+        _;
+    }
+
     /* 
      * @notice Liquidates an unhealthy position
      * @param collateral: The liquidator can choose collateral token address he wants as a reward for liquidating the user. 
@@ -127,7 +133,7 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         uint256 debtAmountToPay
     )
         external
-        onlyOwner
+        onlyProtocolOwnerOrAutomation
         nonReentrant
     {
         // Use delegatecall to execute the liquidate function in the context of this contract
@@ -168,12 +174,9 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
     function getInsufficientBonusPositions(address user)
         external
         view
+        onlyProtocolOwnerOrAutomation
         returns (address[] memory debtTokens, address[] memory collaterals, uint256[] memory debtAmounts)
     {
-        if (!(msg.sender == address(i_automationRegistry) || msg.sender == owner())) {
-            revert Errors.Liquidations__OnlyAutomationOrOwner();
-        }
-
         uint256 maxAllowedTokens = 50; // Reasonable upper limit
         require(_getAllowedTokens().length <= maxAllowedTokens, "Too many tokens");
 
@@ -218,24 +221,30 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
 
     function _scanCollateralForInsufficientBonus(
         address user,
-        address debtToken,
+        address potentialDebtToken,
         uint256 userDebt
     )
         private
         view
         returns (bool hasPosition, address collateral, uint256 debtAmount)
     {
-        uint256 debtInUsd = _getUsdValue(debtToken, userDebt);
+        uint256 debtInUsd = _getUsdValue(potentialDebtToken, userDebt);
         uint256 totalBonusNeededInUsd = getTenPercentBonus(debtInUsd);
 
         address[] memory allowedTokens = _getAllowedTokens();
-        for (uint256 j = 0; j < allowedTokens.length; j++) {
-            address potentialCollateral = allowedTokens[j];
 
-            if (_hasInsufficientBonus(user, potentialCollateral, debtInUsd, totalBonusNeededInUsd)) {
-                return (true, potentialCollateral, userDebt);
+        // Check each allowed token as potential collateral
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
+            address potentialCollateral = allowedTokens[i];
+            uint256 collateralBalance = _getCollateralBalanceOfUser(user, potentialCollateral);
+
+            if (collateralBalance > 0) {
+                if (_hasInsufficientBonus(user, potentialCollateral, debtInUsd, totalBonusNeededInUsd)) {
+                    return (true, potentialCollateral, userDebt); // Return the actual collateral token
+                }
             }
         }
+
         return (false, address(0), 0);
     }
 
@@ -249,12 +258,17 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         view
         returns (bool)
     {
-        uint256 collateralBalance = _getCollateralBalanceOfUser(user, collateral);
-        uint256 collateralValueInUsd = _getUsdValue(collateral, collateralBalance);
+        // First check if position is liquidatable using health factor
+        if (_healthFactor(user) < _getMinimumHealthFactor()) {
+            uint256 collateralBalance = _getCollateralBalanceOfUser(user, collateral);
+            uint256 collateralValueInUsd = _getUsdValue(collateral, collateralBalance);
 
-        uint256 bonusFromThisCollateral = _calculateBonusAmounts(totalBonusNeededInUsd, collateralValueInUsd, debtInUsd);
-
-        return bonusFromThisCollateral < totalBonusNeededInUsd;
+            // Then check if bonus is insufficient
+            uint256 bonusFromThisCollateral =
+                _calculateBonusAmounts(totalBonusNeededInUsd, collateralValueInUsd, debtInUsd);
+            return bonusFromThisCollateral < totalBonusNeededInUsd;
+        }
+        return false;
     }
 
     function _resizePositionArrays(
@@ -265,13 +279,17 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         pure
         returns (address[] memory debtTokens, address[] memory collaterals, uint256[] memory debtAmounts)
     {
-        assembly {
-            mstore(mload(positions), positionCount) // debtTokens
-            mstore(add(mload(positions), 0x20), positionCount) // collaterals
-            mstore(add(mload(positions), 0x40), positionCount) // debtAmounts
+        debtTokens = new address[](positionCount);
+        collaterals = new address[](positionCount);
+        debtAmounts = new uint256[](positionCount);
+
+        for (uint256 i = 0; i < positionCount; i++) {
+            debtTokens[i] = positions.debtTokens[i];
+            collaterals[i] = positions.collaterals[i];
+            debtAmounts[i] = positions.debtAmounts[i];
         }
 
-        return (positions.debtTokens, positions.collaterals, positions.debtAmounts);
+        return (debtTokens, collaterals, debtAmounts);
     }
 
     function _initializePositionArrays(uint256 maxPositions) private pure returns (PositionInfo memory) {
