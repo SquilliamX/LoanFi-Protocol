@@ -8,6 +8,12 @@ remappings = [
     '@openzeppelin/contracts=lib/openzeppelin-contracts/contracts',
     '@uniswap/v3-periphery/=lib/v3-periphery/',
     '@uniswap/v3-core/=lib/v3-core/',
+    'foundry-devops=lib/foundry-devops',
+]
+
+fs_permissions = [
+    { access = "read", path = "./broadcast" },
+    { access = "read", path = "./reports" },
 ]
 
 [fmt]
