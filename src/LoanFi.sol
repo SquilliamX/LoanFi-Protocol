@@ -5,8 +5,9 @@ import { Withdraw } from "./Withdraw.sol";
 import { LiquidationEngine } from "./Liquidation-Operations/LiquidationEngine.sol";
 import { Errors } from "./libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract LoanFi is Withdraw {
+contract LoanFi is Withdraw, Ownable {
     LiquidationEngine public liquidationEngine;
 
     modifier OnlyLiquidationEngine() {
@@ -25,6 +26,7 @@ contract LoanFi is Withdraw {
         uint256 upkeepId
     )
         Withdraw(tokenAddresses, priceFeedAddresses)
+        Ownable(msg.sender)
     {
         liquidationEngine = new LiquidationEngine(address(this), swapRouter, automationRegistry, upkeepId);
     }
@@ -34,9 +36,34 @@ contract LoanFi is Withdraw {
         liquidationEngine.liquidate(msg.sender, user, collateral, debtToken, debtAmountToPay);
     }
 
-    // payback and withdraw
-
     // deposit and borrow
+    function lendAndBorrow(
+        address tokenToLend,
+        uint256 amountOfCollateralToSend,
+        address tokenToBorrow,
+        uint256 amountToBorrow
+    )
+        external
+    {
+        depositCollateral(tokenToLend, amountOfCollateralToSend);
+
+        borrowFunds(tokenToBorrow, amountToBorrow);
+    }
+
+    // payback and withdraw
+    function paybackDebtAndWithdraw(
+        address tokenToPayback,
+        uint256 amountToPayback,
+        address onBehalfOf,
+        address collateralDepositedToWithdraw,
+        uint256 amountCollateralToWithdraw
+    )
+        external
+    {
+        paybackBorrowedAmount(tokenToPayback, amountToPayback, onBehalfOf);
+
+        withdrawCollateral(collateralDepositedToWithdraw, amountCollateralToWithdraw);
+    }
 
     function liquidationWithdrawCollateral(
         address collateral,
