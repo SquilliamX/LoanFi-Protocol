@@ -43,7 +43,7 @@ library Errors {
     error Liquidation__UserHasNotBorrowedToken();
     error Liquidations__OnlyProtocolCanLiquidateInsufficientBonus();
     error Liquidations__ProtocolLiquidationFailed();
-    error Liquidations__OnlyAutomationOrOwner();
+    error Liquidations__OnlyProtocolOwnerOrAutomation();
 
     //////////////////////////////
     //     Withdraw Errors     //
