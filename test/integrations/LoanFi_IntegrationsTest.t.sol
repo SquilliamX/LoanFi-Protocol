@@ -21,10 +21,12 @@ import { OracleLib } from "src/libraries/OracleLib.sol";
 import { Borrowing } from "src/Borrowing.sol";
 import { MockWithdraw } from "test/mocks/MockWithdraw.sol";
 import { Ownable } from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import { LiquidationAutomation } from "src/automation/LiquidationAutomation.sol";
 
 contract LoanFi_IntegrationsTest is Test {
     LoanFi loanFi;
     HelperConfig helperConfig;
+    DeployLoanFi deployLoanFi;
 
     HelperConfig.PriceFeeds public priceFeeds;
     HelperConfig.Tokens public tokens;
@@ -60,15 +62,10 @@ contract LoanFi_IntegrationsTest is Test {
     event UserLiquidated(address indexed collateral, address indexed userLiquidated, uint256 amountOfDebtPaid);
 
     function setUp() external {
-        // Create a new instance of the deployment script
-        DeployLoanFi deployer = new DeployLoanFi();
+        deployLoanFi = new DeployLoanFi(); // Store the deployment instance
+        loanFi = deployLoanFi.deployLoanFi();
 
-        // Deploy protocol (this will create its own HelperConfig)
-        loanFi = deployer.deployLoanFi();
-
-        helperConfig = deployer.helperConfig();
-
-        // Get config values and assign directly to state variables
+        helperConfig = deployLoanFi.helperConfig();
         (priceFeeds, tokens, automationConfig) = helperConfig.activeNetworkConfig();
 
         // Set up arrays with direct struct access
@@ -1765,7 +1762,7 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(actualBonus, expectedBonus);
     }
 
-    function testLiquidationDecreasesUsersBorrowedAmount() public LiquidLoanFi UserCanBeLiquidatedWithBonus { 
+    function testLiquidationDecreasesUsersBorrowedAmount() public LiquidLoanFi UserCanBeLiquidatedWithBonus {
         uint256 liquidatorBalanceBefore = ERC20Mock(tokens.weth).balanceOf(liquidator);
 
         uint256 debtAmountToPay = 100e18;
@@ -1773,7 +1770,7 @@ contract LoanFi_IntegrationsTest is Test {
 
         vm.startPrank(liquidator);
         ERC20Mock(tokens.link).approve(address(loanFi), debtAmountToPay);
-        
+
         loanFi.liquidate(user, tokens.weth, tokens.link, debtAmountToPay);
         vm.stopPrank();
 
@@ -1785,18 +1782,18 @@ contract LoanFi_IntegrationsTest is Test {
         assertEq(loanFi.getAmountOfTokenBorrowed(user, tokens.link), 0);
     }
 
-    function testLiquidationDecreasesUsersCollateral() public LiquidLoanFi UserCanBeLiquidatedWithBonus { 
-         uint256 liquidatorBalanceBefore = ERC20Mock(tokens.weth).balanceOf(liquidator);
+    function testLiquidationDecreasesUsersCollateral() public LiquidLoanFi UserCanBeLiquidatedWithBonus {
+        uint256 liquidatorBalanceBefore = ERC20Mock(tokens.weth).balanceOf(liquidator);
 
         uint256 debtAmountToPay = 100e18;
         uint256 expectedBonus = loanFi.getTokenAmountFromUsd(tokens.weth, loanFi.getUsdValue(tokens.link, 110e18));
-        uint256 usersCollateralBefore = loanFi.getCollateralBalanceOfUser(user, tokens.weth); 
-        
+        uint256 usersCollateralBefore = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+
         uint256 expectedAmountOfCollateralLeft = usersCollateralBefore - expectedBonus;
 
         vm.startPrank(liquidator);
         ERC20Mock(tokens.link).approve(address(loanFi), debtAmountToPay);
-        
+
         loanFi.liquidate(user, tokens.weth, tokens.link, debtAmountToPay);
         vm.stopPrank();
 
@@ -1804,8 +1801,7 @@ contract LoanFi_IntegrationsTest is Test {
 
         uint256 actualBonus = liquidatorBalanceAfter - liquidatorBalanceBefore;
 
-        uint256 usersCollateralAfter = loanFi.getCollateralBalanceOfUser(user, tokens.weth); 
-
+        uint256 usersCollateralAfter = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
 
         assertEq(actualBonus, expectedBonus);
         assertEq(usersCollateralAfter, expectedAmountOfCollateralLeft);
@@ -1843,18 +1839,292 @@ contract LoanFi_IntegrationsTest is Test {
     }
 
     ////////////////////////////////////
+    //    LiquidationEngine Tests    //
+    ///////////////////////////////////
+
+    modifier UserCanBeLiquidatedByProtocol() {
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
+
+        vm.startPrank(user);
+        // User deposits all three collateral types
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT); // 5 WETH = $10,000
+
+        // Deposit all collaterals
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT); // $10,000
+
+        // Borrow LINK tokens
+        loanFi.borrowFunds(tokens.link, 50e18); // Borrow 50 LINK = $500
+        vm.stopPrank();
+
+        // Crash WETH price to make user liquidatable, but keep other collateral valuable
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(100e8); // WETH = $100 (massive crash)
+
+        // the user's collateral will no be worth 5 x 100 = 500
+        _;
+    }
+
+    function testProtocolLiquidateRevertsIfCalledByNonOwner() public UserCanBeLiquidatedByProtocol {
+        uint256 debtToPay = 2e18;
+
+        // Get liquidationEngine instance from LoanFi
+        LiquidationEngine liquidationEngine = loanFi.liquidationEngine();
+
+        vm.startPrank(liquidator);
+
+        vm.expectRevert(Errors.Liquidations__OnlyProtocolOwnerOrAutomation.selector);
+
+        // Attempt to call protocolLiquidate as non-owner
+        liquidationEngine.protocolLiquidate(user, tokens.weth, tokens.link, debtToPay);
+
+        vm.stopPrank();
+    }
+
+    function testGetInsufficientBonusPositionsRevertsIfCalledByNonOwner() public {
+        // Get liquidationEngine instance from LoanFi
+        LiquidationEngine liquidationEngine = loanFi.liquidationEngine();
+
+        vm.startPrank(liquidator);
+
+        // The error should be OwnableUnauthorizedAccount(account)
+        vm.expectRevert(Errors.Liquidations__OnlyProtocolOwnerOrAutomation.selector);
+
+        // Attempt to call protocolLiquidate as non-owner
+        liquidationEngine.getInsufficientBonusPositions(user);
+
+        vm.stopPrank();
+    }
+
+    function testGetInsufficientBonusPositionsWorksProperly() public UserCanBeLiquidatedByProtocol {
+        // Get liquidationEngine instance
+        LiquidationEngine liquidationEngine = loanFi.liquidationEngine();
+
+        // Get the owner of LoanFi (not LiquidationEngine)
+        address loanFiOwner = loanFi.owner();
+
+        // Call getInsufficientBonusPositions as LoanFi owner
+        vm.startPrank(loanFiOwner);
+        (address[] memory debtTokens, address[] memory collaterals, uint256[] memory debtAmounts) =
+            liquidationEngine.getInsufficientBonusPositions(user);
+        vm.stopPrank();
+
+        // Assertions
+        assertEq(debtTokens.length, 1, "Should have one debt position");
+        assertEq(collaterals.length, 1, "Should have one collateral position");
+        assertEq(debtAmounts.length, 1, "Should have one debt amount");
+
+        assertEq(debtTokens[0], address(tokens.link), "Debt token should be LINK");
+        assertEq(collaterals[0], address(tokens.weth), "Collateral should be WETH");
+        assertEq(debtAmounts[0], 50e18, "Debt amount should match borrowed amount");
+
+        // Verify position is actually unhealthy
+        uint256 healthFactor = loanFi.getHealthFactor(user); // Changed from liquidationEngine to loanFi
+        assertTrue(healthFactor < loanFi.getMinimumHealthFactor(), "Position should be unhealthy");
+    }
+
+    function testGetInsufficientBonusPositionsWorksProperlyMultiplePositions() public {
+        // Setup initial balances
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
+        ERC20Mock(tokens.wbtc).mint(address(loanFi), 10_000e18);
+
+        vm.startPrank(user);
+        // User deposits both WETH and WBTC as collateral
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT); // 5 WETH
+        ERC20Mock(tokens.wbtc).approve(address(loanFi), DEPOSIT_AMOUNT); // 5 WBTC
+
+        // Deposit both collaterals
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(tokens.wbtc, DEPOSIT_AMOUNT);
+
+        // Borrow both LINK and WETH
+        loanFi.borrowFunds(tokens.link, 50e18); // Borrow 50 LINK
+        loanFi.borrowFunds(tokens.wbtc, 1e18); // Borrow 1 WBTC
+        vm.stopPrank();
+
+        // Crash both WETH and WBTC prices to make positions liquidatable
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(10e8); // WETH = $10 (massive crash)
+        MockV3Aggregator(priceFeeds.wbtcUsdPriceFeed).updateAnswer(100e8); // WBTC = $100 (massive crash)
+
+        // Get liquidationEngine instance
+        LiquidationEngine liquidationEngine = loanFi.liquidationEngine();
+        address loanFiOwner = loanFi.owner();
+
+        // Call getInsufficientBonusPositions as LoanFi owner
+        vm.startPrank(loanFiOwner);
+        (address[] memory debtTokens, address[] memory collaterals, uint256[] memory debtAmounts) =
+            liquidationEngine.getInsufficientBonusPositions(user);
+        vm.stopPrank();
+
+        // Assert array lengths
+        assertEq(debtTokens.length, 2, "Should have two debt positions");
+        assertEq(collaterals.length, 2, "Should have two collateral positions");
+        assertEq(debtAmounts.length, 2, "Should have two debt amounts");
+
+        // Assert first position (WBTC debt)
+        assertEq(debtTokens[0], address(tokens.wbtc), "First debt token should be WBTC");
+        assertEq(collaterals[0], address(tokens.weth), "First position collateral should be WETH");
+        assertEq(debtAmounts[0], 1e18, "First position debt amount should be 1 WBTC");
+
+        // Assert second position (LINK debt)
+        assertEq(debtTokens[1], address(tokens.link), "Second debt token should be LINK");
+        assertEq(collaterals[1], address(tokens.weth), "Second position collateral should be WETH");
+        assertEq(debtAmounts[1], 50e18, "Second position debt amount should be 50 LINK");
+
+        // Verify positions are actually unhealthy
+        uint256 healthFactor = loanFi.getHealthFactor(user);
+        assertTrue(healthFactor < loanFi.getMinimumHealthFactor(), "Positions should be unhealthy");
+    }
+
+    function testGetInsufficientBonusPositionsWorksProperlyMultiplePeopleWithMultiplePositions() public {
+        address user2 = makeAddr("user2");
+
+        // Setup initial balances for both users
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
+        ERC20Mock(tokens.wbtc).mint(address(loanFi), 10_000e18);
+
+        // Give user2 initial tokens
+        deal(address(tokens.weth), user2, 10_000e18);
+        deal(address(tokens.wbtc), user2, 10_000e18);
+        deal(address(tokens.link), user2, 10_000e18);
+
+        // Setup User 1's positions
+        vm.startPrank(user);
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        ERC20Mock(tokens.wbtc).approve(address(loanFi), DEPOSIT_AMOUNT);
+
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT); // 5 WETH
+        loanFi.depositCollateral(tokens.wbtc, DEPOSIT_AMOUNT); // 5 WBTC
+
+        loanFi.borrowFunds(tokens.link, 50e18); // Borrow 50 LINK
+        loanFi.borrowFunds(tokens.wbtc, 1e18); // Borrow 1 WBTC
+        vm.stopPrank();
+
+        // Setup User 2's positions
+        vm.startPrank(user2);
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        ERC20Mock(tokens.wbtc).approve(address(loanFi), DEPOSIT_AMOUNT);
+
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT); // 5 WETH
+        loanFi.depositCollateral(tokens.wbtc, DEPOSIT_AMOUNT); // 5 WBTC
+
+        loanFi.borrowFunds(tokens.link, 40e18); // Borrow 40 LINK
+        loanFi.borrowFunds(tokens.wbtc, 2e18); // Borrow 2 WBTC
+        vm.stopPrank();
+
+        // Crash prices to make all positions liquidatable
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(10e8); // WETH = $10 (massive crash)
+        MockV3Aggregator(priceFeeds.wbtcUsdPriceFeed).updateAnswer(100e8); // WBTC = $100 (massive crash)
+
+        // Get liquidationEngine instance and owner
+        LiquidationEngine liquidationEngine = loanFi.liquidationEngine();
+        address loanFiOwner = loanFi.owner();
+
+        // Check User 1's positions
+        vm.startPrank(loanFiOwner);
+        (address[] memory debtTokens1, address[] memory collaterals1, uint256[] memory debtAmounts1) =
+            liquidationEngine.getInsufficientBonusPositions(user);
+
+        // Assert User 1's positions
+        assertEq(debtTokens1.length, 2, "User1 should have two debt positions");
+        assertEq(debtTokens1[0], address(tokens.wbtc), "User1 first debt token should be WBTC");
+        assertEq(debtTokens1[1], address(tokens.link), "User1 second debt token should be LINK");
+        assertEq(debtAmounts1[0], 1e18, "User1 WBTC debt amount incorrect");
+        assertEq(debtAmounts1[1], 50e18, "User1 LINK debt amount incorrect");
+        assertEq(collaterals1[0], address(tokens.weth), "User1 first collateral should be WETH");
+        assertEq(collaterals1[1], address(tokens.weth), "User1 second collateral should be WETH");
+
+        // Check User 2's positions
+        (address[] memory debtTokens2, address[] memory collaterals2, uint256[] memory debtAmounts2) =
+            liquidationEngine.getInsufficientBonusPositions(user2);
+        vm.stopPrank();
+
+        // Assert User 2's positions
+        assertEq(debtTokens2.length, 2, "User2 should have two debt positions");
+        assertEq(debtTokens2[0], address(tokens.wbtc), "User2 first debt token should be WBTC");
+        assertEq(debtTokens2[1], address(tokens.link), "User2 second debt token should be LINK");
+        assertEq(debtAmounts2[0], 2e18, "User2 WBTC debt amount incorrect");
+        assertEq(debtAmounts2[1], 40e18, "User2 LINK debt amount incorrect");
+        assertEq(collaterals2[0], address(tokens.weth), "User2 first collateral should be WETH");
+        assertEq(collaterals2[1], address(tokens.weth), "User2 second collateral should be WETH");
+
+        // Verify both positions are unhealthy
+        uint256 healthFactor1 = loanFi.getHealthFactor(user);
+        uint256 healthFactor2 = loanFi.getHealthFactor(user2);
+        assertTrue(healthFactor1 < loanFi.getMinimumHealthFactor(), "User1 positions should be unhealthy");
+        assertTrue(healthFactor2 < loanFi.getMinimumHealthFactor(), "User2 positions should be unhealthy");
+    }
+
+    ////////////////////////////////////
     //  LiquidationAutomation Tests  //
     ///////////////////////////////////
 
-    function testLiquidationCompletedByProtocolWithBonus() public { }
+    function testLiquidationCompletedByProtocolWithSmallBonus() public {
+        // Setup initial balances
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
+
+        // Setup user's position
+        vm.startPrank(user);
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT); // 5 WETH
+        loanFi.borrowFunds(tokens.link, 50e18); // Borrow 50 LINK at $10 = $500
+        vm.stopPrank();
+
+        // Record initial balances
+        uint256 initialUserCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 initialProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Crash WETH price to create insufficient bonus scenario
+        // At $105/WETH: 5 WETH = $525, debt = $500
+        // Available for bonus = $25, which is only 5% (less than required 10%)
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(105e8);
+
+        // Get automation contract directly from deployment
+        LiquidationAutomation automation = deployLoanFi.liquidationAutomation();
+
+        // Call checkUpkeep (this would normally be done by Chainlink)
+        (bool upkeepNeeded, bytes memory performData) = automation.checkUpkeep("");
+        assertTrue(upkeepNeeded, "Upkeep should be needed");
+
+        // Perform the upkeep (liquidation)
+        automation.performUpkeep(performData);
+
+        // Get final balances
+        uint256 finalUserCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 finalProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Calculate actual amounts
+        uint256 collateralLiquidated = initialUserCollateral - finalUserCollateral;
+        uint256 debtPaid = initialProtocolLinkBalance - finalProtocolLinkBalance;
+
+        // Verify liquidation occurred
+        assertEq(debtPaid, 50e18, "Entire debt should be paid");
+        assertEq(finalUserCollateral, 0, "User should have no collateral left"); // Protocol takes all collateral
+
+        // Verify protocol received all remaining value as bonus
+        uint256 collateralValueInUsd = loanFi.getUsdValue(tokens.weth, collateralLiquidated);
+        uint256 debtValueInUsd = loanFi.getUsdValue(tokens.link, debtPaid);
+        uint256 actualBonus = collateralValueInUsd - debtValueInUsd;
+        uint256 expectedBonus = 25e18; // $25 worth of bonus (5% instead of 10%)
+
+        assertEq(actualBonus, expectedBonus, "Protocol should receive the small bonus");
+        assertTrue(
+            actualBonus < (debtValueInUsd * loanFi.getLiquidationBonus()) / loanFi.getLiquidationPrecision(),
+            "Bonus should be less than 10%"
+        );
+    }
 
     function testLiquidationCompletedByProtocolWithNoBonus() public { }
 
-     function testIfBonusIsLessThanFivePercentProtocolAutomaticallyLiquidates() public { }
+    function testIfBonusIsLessTenPercentProtocolLiquidates() public { }
+
+    function testLiquitionAutomationLiquidatesMulipleUsersAtOnce() public { }
 
     ////////////////////////////////////
     //   UniswapV3 TokenSwap Tests   //
     //////////////////////////////////
+
+    function testTokenSwapsAfterProtocolLiquidates() public { }
+
+    function testTokenSwapsAndFundsAutomation() public { }
 
     /////////////////////
     //  LoanFi Tests  //
@@ -1907,4 +2177,12 @@ contract LoanFi_IntegrationsTest is Test {
             "tokens.link price feed mismatch"
         );
     }
+
+    function testliquidationWithdrawCollateralIfCalledByUser() public { }
+
+    function testliquidationPaybackBorrowedAmountRevertsIfCalledByUser() public { }
+
+    function testDepositAndBorrow() public { }
+
+    function testPaybackandWithdraw() public { }
 }
