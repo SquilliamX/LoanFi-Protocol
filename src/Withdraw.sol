@@ -23,7 +23,7 @@ contract Withdraw is Borrowing {
         address tokenCollateralAddress,
         uint256 amountCollateralToWithdraw
     )
-        external
+        public
         nonReentrant
     {
         _withdrawCollateral(tokenCollateralAddress, amountCollateralToWithdraw, msg.sender, msg.sender);
