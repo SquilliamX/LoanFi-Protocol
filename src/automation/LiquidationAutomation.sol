@@ -10,7 +10,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract LiquidationAutomation is AutomationCompatibleInterface, Ownable {
     LiquidationEngine private immutable i_liquidations;
     uint256 private constant MIN_HEALTH_FACTOR = 1e18;
-    uint256 private constant CHECK_BATCH_SIZE = 1000; // Check 1000 users per upkeep
+    uint256 private constant CHECK_BATCH_SIZE = 100; // Check 100 users per upkeep
     uint256 private s_lastCheckedIndex;
 
     constructor(address liquidationsAddress) Ownable(msg.sender) {
@@ -20,7 +20,7 @@ contract LiquidationAutomation is AutomationCompatibleInterface, Ownable {
     /**
      * notice Chainlink Automation checks this function to determine if liquidations are needed
      * dev This is the monitoring system for protocol safety:
-     * - Runs periodically based on Chainlink Automation configuration
+     * - Runs periodically based on Chainlink Automation configuration (every 30 seconds)
      * - Scans batches of users for unhealthy positions
      * - Identifies positions needing protocol intervention
      *
