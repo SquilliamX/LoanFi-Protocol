@@ -74,6 +74,7 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
     SwapLiquidatedTokens private immutable i_swapRouter;
     IAutomationRegistryInterface private immutable i_automationRegistry;
     uint256 private immutable i_upkeepId;
+    address private s_automationContract;
 
     // event for tracking protocol fees
     event ProtocolFeeCollected(address indexed collateralToken, uint256 feeAmount, uint256 bonusShortfall);
@@ -98,10 +99,23 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
     }
 
     modifier onlyProtocolOwnerOrAutomation() {
-        if (!(msg.sender == address(i_automationRegistry) || msg.sender == ILoanFi(i_loanFi).owner())) {
+        // Get LoanFi contract since it's our owner
+        ILoanFi loanFi = ILoanFi(owner());
+
+        // Revert unless caller is one of the authorized addresses
+        if (msg.sender != owner() && msg.sender != loanFi.owner() && msg.sender != s_automationContract) {
             revert Errors.Liquidations__OnlyProtocolOwnerOrAutomation();
         }
         _;
+    }
+
+    function setAutomationContract(address automationContract) external onlyOwner {
+        if (automationContract == address(0)) revert Errors.Liquidations__InvalidAutomationContract();
+        s_automationContract = automationContract;
+    }
+
+    function getAutomationContract() external view returns (address) {
+        return s_automationContract;
     }
 
     /* 
@@ -128,7 +142,6 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
 
     function protocolLiquidate(
         address user,
-        address collateral,
         address debtToken,
         uint256 debtAmountToPay
     )
@@ -136,27 +149,31 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         onlyProtocolOwnerOrAutomation
         nonReentrant
     {
-        // Use delegatecall to execute the liquidate function in the context of this contract
-        // delegatecall means the liquidation will happen as if the protocol itself is the liquidator
-        // This is useful when positions need liquidation but external liquidators aren't incentivized enough (during flash crashes when the user cannot afford the 10% bonus)
-        (bool success,) = address(this).delegatecall(
-            // Encode the function call to "liquidate" with all its parameters
-            // The signature "liquidate(address,address,address,address,uint256)" identifies which function to call
-            // The parameters (user, collateral, debtToken, debtAmountToPay) are the actual values to use
-            abi.encodeWithSignature(
-                "liquidate(address,address,address,address,uint256)", // Updated signature
-                address(this), // Protocol is the liquidator
-                user, // The user to liquidate
-                collateral, // The collateral token to seize
-                debtToken, // The debt token to repay
-                debtAmountToPay // How much debt to repay
-            )
-        );
+        // Get all user's collateral
+        address[] memory allowedTokens = _getAllowedTokens();
 
-        // If the delegatecall failed for any reason, revert the transaction
-        // This ensures we don't partially liquidate or leave the system in an inconsistent state
-        if (!success) {
-            revert Errors.Liquidations__ProtocolLiquidationFailed();
+        // 1. First withdraw ALL collateral from user
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
+            uint256 collateralBalance = _getCollateralBalanceOfUser(user, allowedTokens[i]);
+            if (collateralBalance > 0) {
+                // Take all collateral
+                i_loanFi.liquidationWithdrawCollateral(allowedTokens[i], collateralBalance, user, address(this));
+
+                if (debtAmountToPay > 0) {
+                    TransferParams memory params = TransferParams({
+                        liquidator: address(this),
+                        user: user,
+                        collateral: allowedTokens[i],
+                        debtToken: debtToken,
+                        debtAmountToPay: debtAmountToPay,
+                        totalCollateralToSeize: collateralBalance,
+                        recipient: address(this)
+                    });
+
+                    _onProtocolLiquidation(params); // This handles both debt repayment and automation funding
+                    debtAmountToPay = 0;
+                }
+            }
         }
     }
 
@@ -177,9 +194,6 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         onlyProtocolOwnerOrAutomation
         returns (address[] memory debtTokens, address[] memory collaterals, uint256[] memory debtAmounts)
     {
-        uint256 maxAllowedTokens = 50; // Reasonable upper limit
-        require(_getAllowedTokens().length <= maxAllowedTokens, "Too many tokens");
-
         uint256 batchSize = 10; // Process in smaller chunks
         uint256 maxPositions = batchSize * batchSize;
 
@@ -230,17 +244,32 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
     {
         uint256 debtInUsd = _getUsdValue(potentialDebtToken, userDebt);
         uint256 totalBonusNeededInUsd = getTenPercentBonus(debtInUsd);
+        uint256 totalCollateralValueUsd;
 
         address[] memory allowedTokens = _getAllowedTokens();
 
-        // Check each allowed token as potential collateral
+        // Sum up ALL collateral value first
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
+            address potentialCollateral = allowedTokens[i];
+            uint256 collateralBalance = _getCollateralBalanceOfUser(user, potentialCollateral);
+            if (collateralBalance > 0) {
+                totalCollateralValueUsd += _getUsdValue(potentialCollateral, collateralBalance);
+            }
+        }
+
+        // First check if total collateral is insufficient
+        if (totalCollateralValueUsd < (debtInUsd + totalBonusNeededInUsd)) {
+            return (true, allowedTokens[0], userDebt); // Position needs protocol liquidation
+        }
+
+        // If total collateral is sufficient, check each collateral for individual bonus insufficiency
         for (uint256 i = 0; i < allowedTokens.length; i++) {
             address potentialCollateral = allowedTokens[i];
             uint256 collateralBalance = _getCollateralBalanceOfUser(user, potentialCollateral);
 
             if (collateralBalance > 0) {
                 if (_hasInsufficientBonus(user, potentialCollateral, debtInUsd, totalBonusNeededInUsd)) {
-                    return (true, potentialCollateral, userDebt); // Return the actual collateral token
+                    return (true, potentialCollateral, userDebt);
                 }
             }
         }
@@ -301,30 +330,48 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
     }
 
     function _onProtocolLiquidation(TransferParams memory params) internal override {
-        // Calculate what bonus was actually available vs needed
-        uint256 debtInUsd = _getUsdValue(params.debtToken, params.debtAmountToPay);
-        uint256 totalBonusNeededInUsd = getTenPercentBonus(debtInUsd);
-        uint256 actualBonusInUsd = _getUsdValue(params.collateral, params.totalCollateralToSeize) - debtInUsd;
+        // Calculate protocol fee first
+        uint256 protocolFeeAmount = _calculateProtocolFee(
+            params.collateral, params.totalCollateralToSeize, params.debtToken, params.debtAmountToPay
+        );
 
-        // Calculate protocol fee (whatever bonus was available)
-        uint256 protocolFeeAmount = params.totalCollateralToSeize - params.debtAmountToPay;
+        // Adjust collateral amount for debt repayment to account for protocol fee
+        uint256 collateralForDebt = params.totalCollateralToSeize - protocolFeeAmount;
 
-        emit ProtocolFeeCollected(params.collateral, protocolFeeAmount, totalBonusNeededInUsd - actualBonusInUsd);
+        // First swap enough collateral to cover debt
+        TransferParams memory debtParams = TransferParams({
+            liquidator: params.liquidator,
+            user: params.user,
+            collateral: params.collateral,
+            debtToken: params.debtToken,
+            debtAmountToPay: params.debtAmountToPay,
+            totalCollateralToSeize: collateralForDebt,
+            recipient: params.recipient
+        });
+        _swapCollateralForDebtToken(debtParams);
 
-        // Handle swaps and automation funding
-        _swapCollateralForDebtToken(params, protocolFeeAmount);
-        _swapAndFundAutomation(params.collateral, protocolFeeAmount);
+        // Then handle automation funding with remaining collateral
+        if (protocolFeeAmount > 0) {
+            _swapAndFundAutomation(params.collateral, protocolFeeAmount);
+        }
     }
 
-    function _swapCollateralForDebtToken(TransferParams memory params, uint256 /* protocolFeeAmount */ ) private {
-        // Reset and set new approval
+    function _swapCollateralForDebtToken(TransferParams memory params) private {
+        // Approve router to spend collateral
         IERC20(params.collateral).approve(address(i_swapRouter), 0);
-        IERC20(params.collateral).approve(address(i_swapRouter), params.debtAmountToPay);
+        IERC20(params.collateral).approve(address(i_swapRouter), params.totalCollateralToSeize);
 
-        // Calculate minimum output and execute swap
-        uint256 minAmountOutDebt = _calculateMinAmountOut(params.collateral, params.debtToken, params.debtAmountToPay);
+        // Execute Swap
+        i_swapRouter.swapExactInputSingle(
+            params.collateral,
+            params.debtToken,
+            params.totalCollateralToSeize,
+            params.debtAmountToPay // Ensure we get at least the debt amount
+        );
 
-        i_swapRouter.swapExactInputSingle(params.collateral, params.debtToken, params.debtAmountToPay, minAmountOutDebt);
+        // Approve and repay debt
+        IERC20(params.debtToken).approve(address(i_loanFi), params.debtAmountToPay);
+        i_loanFi.liquidationPaybackBorrowedAmount(params.debtToken, params.debtAmountToPay, params.user, address(this));
     }
 
     function _swapAndFundAutomation(address collateral, uint256 protocolFeeAmount) private {
@@ -351,6 +398,13 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         i_automationRegistry.addFunds(i_upkeepId, uint96(linkAmount));
     }
 
+    // For debt token calculations
+    function _calculateMinAmountOutForDebt(uint256 debtAmount) private pure returns (uint256) {
+        // Allow 2% slippage
+        return (debtAmount * 98) / 100;
+    }
+
+    // For general token-to-token calculations
     function _calculateMinAmountOut(
         address tokenIn,
         address tokenOut,
@@ -368,5 +422,46 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
 
         // Convert USD value back to token amount using output token's price
         return (minValueInUsd * _getPrecision()) / _getUsdValue(tokenOut, _getPrecision());
+    }
+
+    function _calculateProtocolFee(
+        address collateral,
+        uint256 totalCollateralToSeize,
+        address debtToken,
+        uint256 debtAmountToPay
+    )
+        private
+        view
+        returns (uint256)
+    {
+        // Get USD values with proper scaling
+        uint256 debtValueInUsd = _getUsdValue(debtToken, debtAmountToPay);
+
+        // Add 2% slippage protection
+        uint256 collateralNeededInUsd = (debtValueInUsd * 102) / 100;
+
+        // Get collateral price per unit
+        uint256 collateralPricePerUnit = _getUsdValue(collateral, _getPrecision());
+
+        if (collateralPricePerUnit == 0) revert Errors.Liquidations__InvalidCollateralPrice();
+
+        // Calculate required collateral with proper precision handling
+        // First multiply by precision to maintain precision during division
+        uint256 collateralForDebt = (collateralNeededInUsd * _getPrecision()) / collateralPricePerUnit;
+
+        // Safety check for minimum collateral
+        if (collateralForDebt >= totalCollateralToSeize) {
+            return 0;
+        }
+
+        // Calculate remaining collateral for protocol fee
+        uint256 protocolFee = totalCollateralToSeize - collateralForDebt;
+
+        // Safety check - fee should not be larger than total collateral
+        if (protocolFee >= totalCollateralToSeize) {
+            revert Errors.Liquidations__ProtocolFeeCalculationError();
+        }
+
+        return protocolFee;
     }
 }
