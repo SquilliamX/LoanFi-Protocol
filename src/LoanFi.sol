@@ -95,4 +95,8 @@ contract LoanFi is Withdraw, Ownable {
             revert Errors.TransferFailed();
         }
     }
+
+    function setAutomationContract(address automationContract) external onlyOwner {
+        liquidationEngine.setAutomationContract(automationContract);
+    }
 }
