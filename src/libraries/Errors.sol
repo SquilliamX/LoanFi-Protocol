@@ -48,6 +48,7 @@ library Errors {
     error Liquidations__InvalidAutomationContract();
     error Liquidations__ProtocolFeeCalculationError();
     error Liquidations__InvalidCollateralPrice();
+    error Liquidations__NoPositionsToLiquidate();
 
     //////////////////////////////
     //     Withdraw Errors     //
