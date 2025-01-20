@@ -72,6 +72,15 @@ contract LiquidationCore is Getters {
         uint256 bonusInUsd;
     }
 
+    // struct to handle transfer calculations
+    struct TransferCalcResult {
+        uint256 debtInCollateralTerms;
+        uint256 bonusCollateral;
+        uint256 totalCollateralToSeize;
+        uint256 remainingDebtInUsd;
+        address recipient;
+    }
+
     event UserLiquidated(address indexed collateral, address indexed userLiquidated, uint256 amountOfDebtPaid);
 
     modifier moreThanZero(uint256 amount) {
@@ -510,15 +519,6 @@ contract LiquidationCore is Getters {
         );
     }
 
-    // New struct to handle transfer calculations
-    struct TransferCalcResult {
-        uint256 debtInCollateralTerms;
-        uint256 bonusCollateral;
-        uint256 totalCollateralToSeize;
-        uint256 remainingDebtInUsd;
-        address recipient;
-    }
-
     // Split calculation logic into a separate function
     function _calculateTransferAmounts(
         address user,
@@ -698,7 +698,7 @@ contract LiquidationCore is Getters {
         }
     }
 
-    function _executeBasicTransfers(TransferParams memory params) private {
+    function _executeBasicTransfers(TransferParams memory params) internal {
         // First withdraw collateral
         _liquidatationWithdrawCollateralFromUser(params);
 
