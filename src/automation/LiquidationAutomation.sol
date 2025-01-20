@@ -166,7 +166,8 @@ contract LiquidationAutomation is AutomationCompatibleInterface, Ownable {
             return;
         }
 
-        try i_liquidations.protocolLiquidate(user, debtToken, debtAmount) { } catch { }
+        // liquidate
+        i_liquidations.protocolLiquidate(user, debtToken, debtAmount);
     }
 
     function _updateBatchTracking() private {
