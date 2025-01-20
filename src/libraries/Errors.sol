@@ -18,6 +18,7 @@ library Errors {
     //    CoreStorage Errors    //
     ///////////////////////////////
     error CoreStorage__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+    error CoreStorage__BatchSizeTooLarge();
 
     ///////////////////////////////
     //   HealthFactor Errors    //
@@ -44,6 +45,9 @@ library Errors {
     error Liquidations__OnlyProtocolCanLiquidateInsufficientBonus();
     error Liquidations__ProtocolLiquidationFailed();
     error Liquidations__OnlyProtocolOwnerOrAutomation();
+    error Liquidations__InvalidAutomationContract();
+    error Liquidations__ProtocolFeeCalculationError();
+    error Liquidations__InvalidCollateralPrice();
 
     //////////////////////////////
     //     Withdraw Errors     //
