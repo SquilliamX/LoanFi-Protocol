@@ -4,7 +4,9 @@ pragma solidity ^0.8.20;
 import { Script } from "forge-std/Script.sol";
 import { MockV3Aggregator } from "../test/mocks/MockV3Aggregator.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import { SwapLiquidatedTokens } from "src/SwapLiquidatedTokens.sol";
+import { MockTimeSwapRouter } from "@uniswap/v3-periphery/contracts/test/MockTimeSwapRouter.sol";
+import { MockSwapRouter } from "../test/mocks/MockSwapRouter.sol";
+import { MockAutomationRegistry } from "../test/mocks/MockAutomationRegistry.sol";
 
 contract HelperConfig is Script {
     // Define structs to hold all our network configuration data. We need to break up the structs because of stack too deep errors.
@@ -26,6 +28,7 @@ contract HelperConfig is Script {
         address swapRouter; // Uniswap V3 Router
         address automationRegistry; // Chainlink Automation Registry
         uint256 upkeepId; // Chainlink Upkeep ID
+        address liquidationAutomation; // Added: Address of deployed LiquidationAutomation
     }
 
     struct NetworkConfig {
@@ -48,6 +51,9 @@ contract HelperConfig is Script {
     // Default private key for local testing (Anvil's first private key)
     uint256 public constant DEFAULT_ANVIL_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
+    // Constants for mock router configuration
+    address public constant MOCK_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984; // Uniswap V3 Factory
+
     // Store the active network configuration
     NetworkConfig public activeNetworkConfig;
 
@@ -60,6 +66,11 @@ contract HelperConfig is Script {
             // For any other network (local, mainnet, etc)
             activeNetworkConfig = getOrCreateAnvilEthConfig();
         }
+    }
+
+    // Function to update automation registry address after deployment
+    function setLiquidationAutomation(address _liquidationAutomation) public {
+        automationConfig.liquidationAutomation = _liquidationAutomation;
     }
 
     // Returns configuration for Sepolia testnet with real contract addresses
@@ -80,10 +91,11 @@ contract HelperConfig is Script {
             automationConfig: AutomationConfig({
                 // addresses for key components on sepolia
                 deployerKey: vm.envUint("PRIVATE_KEY"),
-                swapRouter: 0xb41b78Ce3D1BDEDE48A3d303eD2564F6d1F6fff0, //?? may need to change
+                swapRouter: 0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E,
                 automationRegistry: 0xE16Df59B887e3Caa439E0b29B42bA2e7976FD8b2,
-                upkeepId: vm.envUint("UPKEEP_ID")
-            })
+                upkeepId: vm.envUint("UPKEEP_ID"),
+                liquidationAutomation: address(0) // Will be set after deployment
+             })
         });
     }
 
@@ -107,8 +119,16 @@ contract HelperConfig is Script {
         MockV3Aggregator linkUsdPriceFeed = new MockV3Aggregator(DECIMALS, LINK_USD_PRICE);
         ERC20Mock linkMock = new ERC20Mock();
 
-        // Deploy mock SwapRouter for local testing
-        SwapLiquidatedTokens swapRouter = new SwapLiquidatedTokens(address(0));
+        // Deploy MockSwapRouter for local testing
+        MockSwapRouter mockRouter = new MockSwapRouter();
+
+        // Create registry with LINK token address
+        MockAutomationRegistry registry = new MockAutomationRegistry(address(linkMock));
+
+        // Mint tokens to the router for swaps
+        wethMock.mint(address(mockRouter), 1_000_000e18);
+        wbtcMock.mint(address(mockRouter), 1_000_000e18);
+        linkMock.mint(address(mockRouter), 1_000_000e18);
 
         vm.stopBroadcast();
 
@@ -119,12 +139,17 @@ contract HelperConfig is Script {
                 wbtcUsdPriceFeed: address(btcUsdPriceFeed),
                 linkUsdPriceFeed: address(linkUsdPriceFeed)
             }),
-            tokens: Tokens({ weth: address(wethMock), wbtc: address(wbtcMock), link: address(linkMock) }),
+            tokens: Tokens({ 
+                weth: address(wethMock), 
+                wbtc: address(wbtcMock), 
+                link: address(linkMock) 
+            }),
             automationConfig: AutomationConfig({
                 deployerKey: DEFAULT_ANVIL_KEY,
-                swapRouter: address(swapRouter), // Use the deployed mock SwapRouter
-                automationRegistry: address(0),
-                upkeepId: 0
+                swapRouter: address(mockRouter),
+                automationRegistry: address(registry),
+                upkeepId: 0,
+                liquidationAutomation: address(0) // Will be set after deployment
             })
         });
     }
