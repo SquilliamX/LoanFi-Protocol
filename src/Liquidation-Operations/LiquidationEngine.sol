@@ -230,6 +230,10 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
             }
         }
 
+        if (positionCount == 0) {
+            revert Errors.Liquidations__NoPositionsToLiquidate();
+        }
+
         return positionCount;
     }
 
@@ -396,12 +400,6 @@ contract LiquidationEngine is LiquidationCore, ReentrancyGuard {
         IERC20(linkToken).approve(address(i_automationRegistry), 0);
         IERC20(linkToken).approve(address(i_automationRegistry), linkAmount);
         i_automationRegistry.addFunds(i_upkeepId, uint96(linkAmount));
-    }
-
-    // For debt token calculations
-    function _calculateMinAmountOutForDebt(uint256 debtAmount) private pure returns (uint256) {
-        // Allow 2% slippage
-        return (debtAmount * 98) / 100;
     }
 
     // For general token-to-token calculations
