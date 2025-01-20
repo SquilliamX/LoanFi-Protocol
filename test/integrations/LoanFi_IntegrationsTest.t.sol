@@ -22,6 +22,7 @@ import { Borrowing } from "src/Borrowing.sol";
 import { MockWithdraw } from "test/mocks/MockWithdraw.sol";
 import { Ownable } from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import { LiquidationAutomation } from "src/automation/LiquidationAutomation.sol";
+import { MockAutomationRegistry } from "test/mocks/MockAutomationRegistry.sol";
 
 contract LoanFi_IntegrationsTest is Test {
     LoanFi loanFi;
@@ -39,6 +40,9 @@ contract LoanFi_IntegrationsTest is Test {
 
     address public user = makeAddr("user"); // Address of the USER
     address public liquidator = makeAddr("liquidator"); // Address of the liquidator
+
+    address public alice = makeAddr("alice");
+    address public bob = makeAddr("bob");
 
     uint256 public constant STARTING_USER_BALANCE = 10 ether; // Initial balance given to test users
 
@@ -60,6 +64,8 @@ contract LoanFi_IntegrationsTest is Test {
     );
 
     event UserLiquidated(address indexed collateral, address indexed userLiquidated, uint256 amountOfDebtPaid);
+
+    event SwapExecuted(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
 
     function setUp() external {
         deployLoanFi = new DeployLoanFi(); // Store the deployment instance
@@ -2113,13 +2119,13 @@ contract LoanFi_IntegrationsTest is Test {
 
         // Calculate actual amounts
         uint256 collateralLiquidated = initialUserCollateral - finalUserCollateral;
-        uint256 debtPaid = finalProtocolLinkBalance - initialProtocolLinkBalance ;
+        uint256 debtPaid = finalProtocolLinkBalance - initialProtocolLinkBalance;
         console.log("Collateral liquidated:", collateralLiquidated);
         console.log("Debt paid:", debtPaid);
 
         // Verify liquidation occurred
         assertEq(debtPaid, 50e18, "Entire debt should be paid");
-        // assertEq(finalUserCollateral, 0, "User should have no collateral left"); // Protocol takes all collateral
+        assertEq(finalUserCollateral, 0, "User should have no collateral left"); // Protocol takes all collateral
 
         // Verify protocol received all remaining value as bonus
         uint256 collateralValueInUsd = loanFi.getUsdValue(tokens.weth, collateralLiquidated);
@@ -2138,21 +2144,373 @@ contract LoanFi_IntegrationsTest is Test {
         );
     }
 
-    function testLiquidationCompletedByProtocolWithNoBonus() public { }
+    function testLiquidationCompletedByProtocolWithNoBonus() public {
+        // Setup initial balances
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
 
-    function testLiquidationRevertsIfUsersTotalCollateralCanPayBonus() public { }
+        // Setup user's position
+        vm.startPrank(user);
+        ERC20Mock(tokens.weth).mint(user, 5e18);
+        ERC20Mock(tokens.weth).approve(address(loanFi), 5e18);
+        loanFi.depositCollateral(tokens.weth, 5e18);
+        loanFi.borrowFunds(tokens.link, 50e18);
+        vm.stopPrank();
 
-    function testIfBonusIsLessTenPercentProtocolLiquidates() public { }
+        // Store initial balances
+        uint256 initialUserCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 initialProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
 
-    function testLiquitionAutomationLiquidatesMulipleUsersAtOnce() public { }
+        // Update price to make position liquidatable with collateral exactly equal to debt
+        // 50 LINK at $10 = $500 debt
+        // Need WETH at $100 so 5 WETH = $500
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(100e8); // $100 per ETH
+
+        // Get automation contract
+        LiquidationAutomation automation = deployLoanFi.liquidationAutomation();
+
+        // Check and perform upkeep
+        (bool upkeepNeeded, bytes memory performData) = automation.checkUpkeep("");
+        assertTrue(upkeepNeeded, "Upkeep should be needed");
+        automation.performUpkeep(performData);
+
+        // Get final balances
+        uint256 finalUserCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 finalProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Calculate actual amounts
+        uint256 collateralLiquidated = initialUserCollateral - finalUserCollateral;
+        uint256 debtPaid = finalProtocolLinkBalance - initialProtocolLinkBalance;
+
+        // Verify liquidation occurred
+        assertEq(debtPaid, 50e18, "Entire debt should be paid");
+        assertEq(finalUserCollateral, 0, "User should have no collateral left");
+
+        // Verify protocol received no bonus (collateral value exactly covers debt)
+        uint256 collateralValueInUsd = loanFi.getUsdValue(tokens.weth, collateralLiquidated);
+        uint256 debtValueInUsd = loanFi.getUsdValue(tokens.link, debtPaid);
+        uint256 actualBonus = collateralValueInUsd - debtValueInUsd;
+
+        assertEq(actualBonus, 0, "Protocol should receive no bonus");
+    }
+
+    function testLiquidationRevertsIfUsersTotalCollateralCanPayBonus()
+        public
+        LiquidLoanFi
+        UserCanBeLiquidatedWithBonus
+    {
+        // Get automation contract
+        LiquidationAutomation automation = deployLoanFi.liquidationAutomation();
+
+        // Check upkeep
+        (bool upkeepNeeded, bytes memory performData) = automation.checkUpkeep("");
+
+        // Upkeep should be needed (we'll check that it reverts with no positions)
+        assertTrue(upkeepNeeded, "Upkeep should be needed");
+
+        // Try to force liquidation - should revert since no positions need protocol liquidation
+        vm.expectRevert(Errors.Liquidations__NoPositionsToLiquidate.selector);
+        automation.performUpkeep(performData);
+
+        // Verify position remains unchanged
+        assertEq(loanFi.getCollateralBalanceOfUser(user, tokens.weth), 5e18, "WETH collateral should remain unchanged");
+        assertEq(loanFi.getAmountOfTokenBorrowed(user, tokens.link), 100e18, "LINK debt should remain unchanged");
+
+        // Calculate total collateral value
+        uint256 wethValue = loanFi.getUsdValue(tokens.weth, 5e18);
+        uint256 wbtcValue = loanFi.getUsdValue(tokens.wbtc, 1e18);
+        uint256 totalCollateralValue = wethValue + wbtcValue;
+
+        // Calculate required bonus
+        uint256 debtValue = loanFi.getUsdValue(tokens.link, 50e18);
+        uint256 requiredBonus = (debtValue * loanFi.getLiquidationBonus()) / loanFi.getLiquidationPrecision();
+
+        // Verify user has enough total collateral to cover debt + full bonus
+        assertTrue(
+            totalCollateralValue >= debtValue + requiredBonus, "User should have enough collateral for full bonus"
+        );
+    }
+
+    function testIfBonusIsLessTenPercentCheckUpLiquidates() public UserCanBeLiquidatedByProtocol {
+        // Store initial balances
+        uint256 initialUserCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 initialProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Get automation contract
+        LiquidationAutomation automation = deployLoanFi.liquidationAutomation();
+
+        // Check upkeep
+        (bool upkeepNeeded, bytes memory performData) = automation.checkUpkeep("");
+        assertTrue(upkeepNeeded, "Upkeep should be needed");
+
+        console.log("-------- Before Liquidation --------");
+        console.log("User WETH collateral:", loanFi.getCollateralBalanceOfUser(user, tokens.weth));
+        console.log("User LINK debt:", loanFi.getAmountOfTokenBorrowed(user, tokens.link));
+
+        // Perform the upkeep (liquidation)
+        automation.performUpkeep(performData);
+
+        console.log("-------- After Liquidation --------");
+        console.log("User WETH collateral:", loanFi.getCollateralBalanceOfUser(user, tokens.weth));
+        console.log("User LINK debt:", loanFi.getAmountOfTokenBorrowed(user, tokens.link));
+
+        // Get final balances
+        uint256 finalUserCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 finalProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Calculate actual amounts
+        uint256 collateralLiquidated = initialUserCollateral - finalUserCollateral;
+        uint256 debtPaid = finalProtocolLinkBalance - initialProtocolLinkBalance;
+
+        // Verify liquidation occurred
+        assertEq(debtPaid, 50e18, "Entire debt should be paid"); // 50 LINK
+        assertEq(finalUserCollateral, 0, "User should have no collateral left"); // Protocol takes all collateral
+
+        // Calculate and verify bonus is less than 10%
+        uint256 collateralValueInUsd = loanFi.getUsdValue(tokens.weth, collateralLiquidated);
+        uint256 debtValueInUsd = loanFi.getUsdValue(tokens.link, debtPaid);
+        uint256 actualBonus = collateralValueInUsd - debtValueInUsd;
+        uint256 requiredBonus = (debtValueInUsd * loanFi.getLiquidationBonus()) / loanFi.getLiquidationPrecision();
+
+        assertTrue(actualBonus < requiredBonus, "Available bonus should be less than required 10%");
+        assertTrue(
+            actualBonus < (debtValueInUsd * loanFi.getLiquidationBonus()) / loanFi.getLiquidationPrecision(),
+            "Bonus should be less than required 10%"
+        );
+    }
+
+    modifier manyUsersAreLiquidatable() {
+        // Setup initial protocol balance
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
+
+        // Set initial prices
+        MockV3Aggregator(priceFeeds.linkUsdPriceFeed).updateAnswer(10e8); // $10 per LINK
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(2000e8); // $2000 per ETH
+
+        // Setup user's position: 5 WETH ($10,000) collateral, 50 LINK ($500) debt
+        vm.startPrank(user);
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT);
+        loanFi.borrowFunds(tokens.link, 50e18);
+        vm.stopPrank();
+
+        // Setup alice's position: 5 WETH ($10,000) collateral, 80 LINK ($800) debt
+        vm.startPrank(alice);
+        ERC20Mock(tokens.weth).mint(alice, STARTING_USER_BALANCE);
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT);
+        loanFi.borrowFunds(tokens.link, 80e18);
+        vm.stopPrank();
+
+        // Setup bob's position: 5 WETH ($10,000) collateral, 90 LINK ($900) debt
+        vm.startPrank(bob);
+        ERC20Mock(tokens.weth).mint(bob, STARTING_USER_BALANCE);
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT);
+        loanFi.borrowFunds(tokens.link, 90e18);
+        vm.stopPrank();
+
+        // Make all positions liquidatable by dropping WETH price by 95%
+        // At $100/ETH:
+        // User: 5 WETH = $500 collateral, $500 debt (+ 10% bonus = $550 needed)
+        // Alice: 5 WETH = $500 collateral, $800 debt (+ 10% bonus = $880 needed)
+        // Bob: 5 WETH = $500 collateral, $900 debt (+ 10% bonus = $990 needed)
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(100e8); // $100 per ETH
+
+        _;
+    }
+
+    function testLiquitionAutomationLiquidatesMulipleUsersAtOnce() public manyUsersAreLiquidatable {
+        // Store initial balances before liquidation
+        uint256 initialProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Get automation contract
+        LiquidationAutomation automation = deployLoanFi.liquidationAutomation();
+
+        // Check upkeep
+        (bool upkeepNeeded, bytes memory performData) = automation.checkUpkeep("");
+        assertTrue(upkeepNeeded, "Upkeep should be needed");
+
+        // Perform the liquidations
+        automation.performUpkeep(performData);
+
+        // Get final balances
+        uint256 userFinalCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 aliceFinalCollateral = loanFi.getCollateralBalanceOfUser(alice, tokens.weth);
+        uint256 bobFinalCollateral = loanFi.getCollateralBalanceOfUser(bob, tokens.weth);
+        uint256 finalProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Verify all users were liquidated
+        assertEq(userFinalCollateral, 0, "User should have no collateral left");
+        assertEq(aliceFinalCollateral, 0, "Alice should have no collateral left");
+        assertEq(bobFinalCollateral, 0, "Bob should have no collateral left");
+
+        // Verify all debts were paid
+        assertEq(loanFi.getAmountOfTokenBorrowed(user, tokens.link), 0, "User should have no remaining debt");
+        assertEq(loanFi.getAmountOfTokenBorrowed(alice, tokens.link), 0, "Alice should have no remaining debt");
+        assertEq(loanFi.getAmountOfTokenBorrowed(bob, tokens.link), 0, "Bob should have no remaining debt");
+
+        // Calculate total debt paid
+        uint256 totalDebtPaid = finalProtocolLinkBalance - initialProtocolLinkBalance;
+        assertEq(totalDebtPaid, 220e18, "Total debt paid should be 220 LINK"); // 50 + 80 + 90 = 220 LINK
+
+        // Verify health factors improved
+        assertTrue(
+            loanFi.getHealthFactor(user) >= loanFi.getMinimumHealthFactor(), "User health factor should be improved"
+        );
+        assertTrue(
+            loanFi.getHealthFactor(alice) >= loanFi.getMinimumHealthFactor(), "Alice health factor should be improved"
+        );
+        assertTrue(
+            loanFi.getHealthFactor(bob) >= loanFi.getMinimumHealthFactor(), "Bob health factor should be improved"
+        );
+
+        // Protocol solvency
+        assertTrue(
+            ERC20Mock(tokens.link).balanceOf(address(loanFi)) >= 0, "Protocol should maintain positive LINK balance"
+        );
+    }
 
     ////////////////////////////////////
     //   UniswapV3 TokenSwap Tests   //
     //////////////////////////////////
 
-    function testTokenSwapsAfterProtocolLiquidates() public { }
+    function testTokenSwapsAfterProtocolLiquidates() public UserCanBeLiquidatedByProtocol {
+        // Get initial balances
+        uint256 initialProtocolWethBalance = ERC20Mock(tokens.weth).balanceOf(address(loanFi));
+        uint256 initialProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
 
-    function testTokenSwapsAndFundsAutomation() public { }
+        // Get user's initial position
+        uint256 userInitialDebt = loanFi.getAmountOfTokenBorrowed(user, tokens.link);
+        uint256 userInitialCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+
+        // Trigger liquidation
+        vm.startPrank(address(loanFi));
+        loanFi.liquidationEngine().protocolLiquidate(user, tokens.link, userInitialDebt);
+        vm.stopPrank();
+
+        // Get final balances and verify results
+        uint256 finalProtocolWethBalance = ERC20Mock(tokens.weth).balanceOf(address(loanFi));
+        uint256 finalProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Verify liquidation basics
+        assertEq(loanFi.getCollateralBalanceOfUser(user, tokens.weth), 0, "User should have no collateral left");
+        assertEq(loanFi.getAmountOfTokenBorrowed(user, tokens.link), 0, "User should have no debt left");
+
+        // Verify token movements for debt repayment
+        assertTrue(
+            finalProtocolLinkBalance >= initialProtocolLinkBalance + userInitialDebt,
+            "Protocol should receive at least the debt amount in LINK"
+        );
+
+        // Verify all WETH was used (debt repayment + automation funding)
+        assertEq(
+            finalProtocolWethBalance, initialProtocolWethBalance - userInitialCollateral, "All WETH should be used"
+        );
+
+        // Verify health factor is improved
+        assertTrue(loanFi.getHealthFactor(user) >= loanFi.getMinimumHealthFactor(), "Health factor should be improved");
+
+        // Verify protocol maintains solvency
+        assertTrue(
+            ERC20Mock(tokens.link).balanceOf(address(loanFi)) >= loanFi.getTotalTokenAmountsBorrowed(tokens.link),
+            "Protocol should maintain sufficient LINK balance"
+        );
+
+        // Verify link amount increased by the amount the user borrowed
+        assertEq(
+            finalProtocolLinkBalance - initialProtocolLinkBalance,
+            userInitialDebt,
+            "Protocol LINK balance should increase by the borrowed amount"
+        );
+    }
+
+    function testTokenSwapsAndFundsAutomation() public {
+        // Mint initial LINK to protocol
+        ERC20Mock(tokens.link).mint(address(loanFi), 10_000e18);
+
+        vm.startPrank(user);
+        // User deposits 5 WETH as collateral
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT); // 5 WETH = $10,000
+
+        // Deposit collateral
+        loanFi.depositCollateral(tokens.weth, DEPOSIT_AMOUNT); // $10,000
+
+        // Borrow LINK tokens
+        loanFi.borrowFunds(tokens.link, 50e18); // Borrow 50 LINK = $500
+        vm.stopPrank();
+
+        // Crash WETH price to make user liquidatable
+        MockV3Aggregator(priceFeeds.wethUsdPriceFeed).updateAnswer(120e8);
+
+        // Get initial balances
+        uint256 initialAutomationLinkBalance =
+            ERC20Mock(tokens.link).balanceOf(address(automationConfig.automationRegistry));
+        uint256 initialProtocolWethBalance = ERC20Mock(tokens.weth).balanceOf(address(loanFi));
+        uint256 initialProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+
+        // Get user's initial position
+        uint256 userInitialDebt = loanFi.getAmountOfTokenBorrowed(user, tokens.link);
+        uint256 userInitialCollateral = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+
+        // Calculate expected LINK from protocol fee
+        // 0.75 WETH * $120 = $90
+        // $90 worth of LINK at $10 per LINK = 9 LINK
+        // Apply 2% slippage: 9 * 0.98 = 8.82 LINK
+        uint256 expectedLinkFunding = 8.82e18;
+
+        // Trigger liquidation
+        vm.startPrank(address(loanFi));
+        loanFi.liquidationEngine().protocolLiquidate(user, tokens.link, userInitialDebt);
+        vm.stopPrank();
+
+        // Get final balances
+        uint256 finalAutomationLinkBalance =
+            ERC20Mock(tokens.link).balanceOf(address(automationConfig.automationRegistry));
+        uint256 finalProtocolWethBalance = ERC20Mock(tokens.weth).balanceOf(address(loanFi));
+        uint256 finalProtocolLinkBalance = ERC20Mock(tokens.link).balanceOf(address(loanFi));
+        uint256 finalLiquidationEngineLinkBalance =
+            ERC20Mock(tokens.link).balanceOf(address(loanFi.liquidationEngine()));
+
+        uint256 actualAutomationFunding = finalAutomationLinkBalance - initialAutomationLinkBalance;
+
+        // Verify automation funding
+        assertEq(actualAutomationFunding, expectedLinkFunding, "Automation should receive expected LINK funding");
+
+        // 1. Verify LiquidationEngine has no leftover LINK
+        assertEq(
+            finalLiquidationEngineLinkBalance, 0, "LiquidationEngine should not hold any LINK after funding automation"
+        );
+
+        // 2. Verify user's position is properly liquidated
+        assertEq(loanFi.getCollateralBalanceOfUser(user, tokens.weth), 0, "User should have no WETH collateral left");
+        assertEq(loanFi.getAmountOfTokenBorrowed(user, tokens.link), 0, "User should have no LINK debt left");
+
+        // 3. Verify protocol's WETH balance decreased by full collateral amount
+        assertEq(
+            finalProtocolWethBalance,
+            initialProtocolWethBalance - userInitialCollateral,
+            "Protocol should use all WETH collateral"
+        );
+
+        // 4. Verify protocol's LINK balance increased by debt amount
+        assertEq(
+            finalProtocolLinkBalance - initialProtocolLinkBalance,
+            userInitialDebt,
+            "Protocol should receive full debt amount in LINK"
+        );
+
+        // 5. Verify health factor is above minimum
+        assertTrue(
+            loanFi.getHealthFactor(user) >= loanFi.getMinimumHealthFactor(),
+            "User health factor should be improved after liquidation"
+        );
+
+        // 6. Verify automation registry received the funds
+        assertTrue(
+            address(automationConfig.automationRegistry).balance >= 0,
+            "Automation registry should maintain positive balance"
+        );
+    }
 
     /////////////////////
     //  LoanFi Tests  //
