@@ -137,7 +137,9 @@ contract CoreStorage is ReentrancyGuard {
         view
         returns (address[] memory users, uint256 totalUsers)
     {
-        require(batchSize <= 100, "Batch size too large"); // Limit maximum batch size
+        if (batchSize > 100) {
+            revert Errors.CoreStorage__BatchSizeTooLarge();
+        }
 
         uint256 length = s_users.length;
         if (offset >= length) {
