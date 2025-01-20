@@ -3,8 +3,10 @@ pragma solidity ^0.8.20;
 
 import { Script } from "forge-std/Script.sol";
 import { HelperConfig } from "./HelperConfig.s.sol";
-import { LoanFi } from "src/LoanFi.sol";
-import { LiquidationAutomation } from "src/automation/LiquidationAutomation.sol";
+import { LoanFi } from "../src/LoanFi.sol";
+import { LiquidationEngine } from "../src/Liquidation-Operations/LiquidationEngine.sol";
+import { LiquidationAutomation } from "../src/automation/LiquidationAutomation.sol";
+import { SetupAutomation } from "./Interactions.s.sol";
 
 contract DeployLoanFi is Script {
     // Only deploy the final contract in the inheritance chain since the final contract in the inheritance chian inherits all functionality and contracts
@@ -24,6 +26,7 @@ contract DeployLoanFi is Script {
 
     // main function we call when we deploy the protocol through this script.
     function run() external {
+        // Deploy contracts
         deployLoanFi();
     }
 
@@ -34,6 +37,19 @@ contract DeployLoanFi is Script {
     function deployLoanFi() public returns (LoanFi) {
         deployTokenConfig();
         deployContracts();
+
+        // Only run SetupAutomation if we're on a real network
+        if (block.chainid != 31_337) {
+            // 31337 is Anvil's chain ID
+            SetupAutomation setupAutomation = new SetupAutomation();
+            setupAutomation.run();
+        } else {
+            // For local testing, just set the automation contract in LiquidationEngine
+            vm.startBroadcast(s_deployerKey);
+            loanFi.setAutomationContract(address(liquidationAutomation));
+            vm.stopBroadcast();
+        }
+
         return loanFi;
     }
 
