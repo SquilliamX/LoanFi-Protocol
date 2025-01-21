@@ -31,15 +31,17 @@ contract HelperConfig is Script {
         address liquidationAutomation; // Added: Address of deployed LiquidationAutomation
     }
 
+    // Main configuration struct that combines all network-specific settings into one object
     struct NetworkConfig {
-        PriceFeeds priceFeeds;
-        Tokens tokens;
-        AutomationConfig automationConfig;
+        PriceFeeds priceFeeds; // Groups all price feed addresses for supported tokens
+        Tokens tokens; // Groups all token contract addresses
+        AutomationConfig automationConfig; // Groups all automation-related settings
     }
 
-    PriceFeeds public priceFeeds;
-    Tokens public tokens;
-    AutomationConfig public automationConfig;
+    // Public state variables to store current network configuration components
+    PriceFeeds public priceFeeds; // Stores active price feed addresses
+    Tokens public tokens; // Stores active token addresses
+    AutomationConfig public automationConfig; // Stores active automation settings
 
     // Constants for mock price feed configuration
     uint8 public constant DECIMALS = 8; // Chainlink price feeds use 8 decimals
@@ -139,18 +141,14 @@ contract HelperConfig is Script {
                 wbtcUsdPriceFeed: address(btcUsdPriceFeed),
                 linkUsdPriceFeed: address(linkUsdPriceFeed)
             }),
-            tokens: Tokens({ 
-                weth: address(wethMock), 
-                wbtc: address(wbtcMock), 
-                link: address(linkMock) 
-            }),
+            tokens: Tokens({ weth: address(wethMock), wbtc: address(wbtcMock), link: address(linkMock) }),
             automationConfig: AutomationConfig({
                 deployerKey: DEFAULT_ANVIL_KEY,
                 swapRouter: address(mockRouter),
                 automationRegistry: address(registry),
                 upkeepId: 0,
                 liquidationAutomation: address(0) // Will be set after deployment
-            })
+             })
         });
     }
 }
