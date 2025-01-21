@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { IAutomationRegistryInterface } from "src/interfaces/IAutomationRegistryInterface.sol";
+// import { IAutomationRegistryInterface } from "src/interfaces/IAutomationRegistryInterface.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract MockAutomationRegistry is IAutomationRegistryInterface {
+contract MockAutomationRegistry {
     address public immutable LINK;
 
     constructor(address linkToken) {
