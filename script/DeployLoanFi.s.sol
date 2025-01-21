@@ -9,16 +9,16 @@ import { LiquidationAutomation } from "../src/automation/LiquidationAutomation.s
 import { SetupAutomation } from "./Interactions.s.sol";
 
 contract DeployLoanFi is Script {
-    // Only deploy the final contract in the inheritance chain since the final contract in the inheritance chian inherits all functionality and contracts
-    LoanFi public loanFi;
-    HelperConfig public helperConfig;
-    LiquidationAutomation public liquidationAutomation;
+    // Main contract instances that will be deployed
+    LoanFi public loanFi; // Main protocol contract that handles lending, borrowing, and core functionality
+    HelperConfig public helperConfig; // Configuration contract that provides network-specific addresses and settings
+    LiquidationAutomation public liquidationAutomation; // Contract that interfaces with Chainlink Automation for automated liquidations
 
-    // deployerKey changes depending on which network we are on
-    uint256 private s_deployerKey;
-    address private s_swapRouter;
-    address private s_automationRegistry;
-    uint256 private s_upkeepId;
+    // State variables for network-specific deployment configuration
+    uint256 private s_deployerKey; // Private key used for contract deployment, varies by network (e.g., different for testnet vs local)
+    address private s_swapRouter; // Address of the Uniswap V3 SwapRouter contract for token swaps during liquidations
+    address private s_automationRegistry; // Address of the Chainlink Automation Registry for managing automated liquidations
+    uint256 private s_upkeepId; // Unique identifier for the Chainlink Automation upkeep task
 
     // Declaring Arrays to store allowed collateral token addresses and their corresponding price feeds
     address[] public tokenAddresses;
@@ -37,20 +37,25 @@ contract DeployLoanFi is Script {
     function deployLoanFi() public returns (LoanFi) {
         deployTokenConfig();
         deployContracts();
+        setupAutomation(); // Extract to new function for better organization
 
+        return loanFi;
+    }
+
+    /// @notice Sets up automation based on the network environment
+    /// @dev Uses Chainlink Automation on live networks, direct configuration for local testing
+    function setupAutomation() private {
         // Only run SetupAutomation if we're on a real network
         if (block.chainid != 31_337) {
             // 31337 is Anvil's chain ID
-            SetupAutomation setupAutomation = new SetupAutomation();
-            setupAutomation.run();
+            SetupAutomation automationSetup = new SetupAutomation(); // Create new instance of automation setup contract
+            automationSetup.run(); // Execute the automation setup process
         } else {
             // For local testing, just set the automation contract in LiquidationEngine
             vm.startBroadcast(s_deployerKey);
             loanFi.setAutomationContract(address(liquidationAutomation));
             vm.stopBroadcast();
         }
-
-        return loanFi;
     }
 
     /*
