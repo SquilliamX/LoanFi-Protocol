@@ -2564,11 +2564,64 @@ contract LoanFi_IntegrationsTest is Test {
         );
     }
 
-    function testliquidationWithdrawCollateralIfCalledByUser() public { }
+    function testliquidationWithdrawCollateralRevertsIfCalledByUser() public { 
+        vm.prank(liquidator);
+        vm.expectRevert(Errors.LoanFi__OnlyLiquidationEngine.selector);
+        loanFi.liquidationWithdrawCollateral(tokens.weth, DEPOSIT_AMOUNT, user, liquidator);
+    }
 
-    function testliquidationPaybackBorrowedAmountRevertsIfCalledByUser() public { }
+    function testliquidationPaybackBorrowedAmountRevertsIfCalledByUser() public { 
+        vm.prank(liquidator);
+        vm.expectRevert(Errors.LoanFi__OnlyLiquidationEngine.selector);
+        loanFi.liquidationPaybackBorrowedAmount(tokens.weth, DEPOSIT_AMOUNT, user, liquidator);
+    }
 
-    function testDepositAndBorrow() public { }
+    function testSetAutomationContractRevertsIfCalledByNonOwner() public {
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user));
+        loanFi.setAutomationContract(user);
+    }
 
-    function testPaybackandWithdraw() public { }
+    function testDepositAndBorrow() public { 
+        uint256 linkAmountToBorrow = 10e18;
+        uint256 userCollateralDepositedBefore = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 userAmountOfTokenBorrowedBefore = loanFi.getAmountOfTokenBorrowed(user, tokens.link);
+
+        // First approve LoanFi to spend user's WETH
+        vm.startPrank(user);
+        ERC20Mock(tokens.weth).approve(address(loanFi), DEPOSIT_AMOUNT);
+        
+        // Then deposit and borrow
+        loanFi.DepositAndBorrow(tokens.weth, DEPOSIT_AMOUNT, tokens.link, linkAmountToBorrow);
+        vm.stopPrank();
+
+        uint256 userCollateralDepositedAfter = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 userAmountOfTokenBorrowedAfter = loanFi.getAmountOfTokenBorrowed(user, tokens.link);
+
+        assertEq(userCollateralDepositedBefore, 0);
+        assertEq(userCollateralDepositedAfter, DEPOSIT_AMOUNT);
+        assertEq(userAmountOfTokenBorrowedBefore, 0);
+        assertEq(userAmountOfTokenBorrowedAfter, linkAmountToBorrow);
+    }
+
+    function testPaybackandWithdraw() public UserDepositedAndBorrowedLink { 
+        uint256 amountToPayback = 10e18;
+        uint256 userCollateralDepositedBefore = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 userAmountOfTokenBorrowedBefore = loanFi.getAmountOfTokenBorrowed(user, tokens.link);
+
+       vm.startPrank(user);
+        ERC20Mock(tokens.link).approve(address(loanFi), amountToPayback);
+
+        loanFi.paybackDebtAndWithdraw(tokens.link, amountToPayback, user, tokens.weth, DEPOSIT_AMOUNT);
+
+        vm.stopPrank();
+
+        uint256 userCollateralDepositedAfter = loanFi.getCollateralBalanceOfUser(user, tokens.weth);
+        uint256 userAmountOfTokenBorrowedAfter = loanFi.getAmountOfTokenBorrowed(user, tokens.link);   
+
+        assertEq(userCollateralDepositedBefore, DEPOSIT_AMOUNT);
+        assertEq(userCollateralDepositedAfter, 0);
+        assertEq(userAmountOfTokenBorrowedBefore, LINK_AMOUNT_TO_BORROW);
+        assertEq(userAmountOfTokenBorrowedAfter, 0);
+    }
 }
