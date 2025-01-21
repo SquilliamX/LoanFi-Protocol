@@ -1,74 +1,109 @@
     // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Borrowing } from "src/Borrowing.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Errors } from "src/libraries/Errors.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Borrowing } from "src/Borrowing.sol";
 
+/**
+ * @title Withdraw Contract
+ * @author William Permuy
+ * @notice Manages secure collateral withdrawals from the lending protocol
+ * @dev Implements withdrawal system with the following features:
+ *
+ * Architecture Highlights:
+ * 1. Security Features
+ *    - CEI (Checks-Effects-Interactions) pattern
+ *    - Balance verification
+ *    - Address validation
+ *    - Transfer confirmation
+ *    - Reentrancy protection
+ *
+ * 2. Withdrawal Controls
+ *    - Balance sufficiency checks
+ *    - Token validation
+ *    - Health factor maintenance
+ *    - Position solvency verification
+ *
+ * 3. State Management
+ *    - Atomic operations
+ *    - Event emission
+ *    - Position tracking
+ *    - Balance accounting
+ *
+ * Key Components:
+ * - Balance Tracking: Real-time position monitoring
+ * - Transfer Logic: Secure token movements
+ * - Event System: Transparent state updates
+ *
+ * Security Considerations:
+ * - State updates before transfers
+ * - Comprehensive balance checks
+ * - Zero address protection
+ * - Failed transfer handling
+ */
 contract Withdraw is Borrowing {
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
     constructor(
         address[] memory tokenAddresses,
         address[] memory priceFeedAddresses
     )
         Borrowing(tokenAddresses, priceFeedAddresses)
     { }
-    /*
-     * @param tokenCollateralAddress: The ERC20 token address of the collateral you're withdrawing
-     * @param amountCollateral: The amount of collateral you're withdrawing
-     * @notice This function will withdraw your collateral.
-     * @notice If you have borrowed funds, you will not be able to redeem until you pay back borrowed funds
+
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Internal function for secure collateral withdrawal
+     * @dev Implements withdrawal logic with the following safety features:
+     * - Balance verification
+     * - Address validation
+     * - CEI pattern compliance
+     * - Event emission
+     * - Transfer confirmation
      */
-
-    function withdrawCollateral(
-        address tokenCollateralAddress,
-        uint256 amountCollateralToWithdraw
-    )
-        public
-        nonReentrant
-    {
-        _withdrawCollateral(tokenCollateralAddress, amountCollateralToWithdraw, msg.sender, msg.sender);
-        _revertIfHealthFactorIsBroken(msg.sender);
-    }
-
     function _withdrawCollateral(
-        address tokenCollateralAddress,
-        uint256 amountCollateralToWithdraw,
-        address from,
-        address to
+        address tokenCollateralAddress, // Token being withdrawn
+        uint256 amountCollateralToWithdraw, // Amount to withdraw
+        address from, // Source address of collateral
+        address to // Destination address for withdrawal
     )
         internal
-        moreThanZero(amountCollateralToWithdraw)
-        isAllowedToken(tokenCollateralAddress)
+        moreThanZero(amountCollateralToWithdraw) // Prevents zero-value withdrawals
+        isAllowedToken(tokenCollateralAddress) // Validates supported collateral
     {
-        // zero address check
-        // we removed the zero address check for the `to` parameter to save gas as there is no way a user can set/change the `to` address
+        // STAGE 1: Address Validation
+        // Only validate 'from' address as 'to' is controlled internally
         if (from == address(0)) {
             revert Errors.ZeroAddressNotAllowed();
         }
 
-        // user must have funds deposited to withdraw
+        // STAGE 2: Balance Verification
+        // Ensure user has collateral deposited
         if (_getCollateralBalanceOfUser(from, tokenCollateralAddress) == 0) {
             revert Errors.Withdraw__UserHasNoCollateralDeposited();
         }
 
-        // user can only withdraw up to the amount he deposited
+        // Verify sufficient withdrawal balance
         if (_getCollateralBalanceOfUser(from, tokenCollateralAddress) < amountCollateralToWithdraw) {
             revert Errors.Withdraw__UserDoesNotHaveThatManyTokens();
         }
-        // user must pay back the amount he borrowed before withdraw
 
-        // Decrease the user's collateral balance in our internal accounting
-        // This must happen before the transfer to prevent reentrancy attacks
+        // STAGE 3: State Updates (Following CEI Pattern)
+        // Update internal accounting before transfer
         decreaseCollateralDeposited(from, tokenCollateralAddress, amountCollateralToWithdraw);
 
-        // Emit event for off-chain tracking and transparency since we are updating state
+        // STAGE 4: Event Emission
+        // Notify external systems of withdrawal
         emit CollateralWithdrawn(tokenCollateralAddress, amountCollateralToWithdraw, from, to);
 
-        // Transfer the collateral tokens from this contract back to the user
-        // Using ERC20's transfer instead of transferFrom since the tokens are already in this contract
+        // STAGE 5: Token Transfer
+        // Execute ERC20 transfer with safety check
         bool success = IERC20(tokenCollateralAddress).transfer(to, amountCollateralToWithdraw);
-
-        // If the transfer fails, revert the transaction
         if (!success) {
             revert Errors.TransferFailed();
         }
