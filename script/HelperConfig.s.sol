@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.25;
 
 import { Script } from "forge-std/Script.sol";
 import { MockV3Aggregator } from "../test/mocks/MockV3Aggregator.sol";
@@ -8,75 +8,155 @@ import { MockTimeSwapRouter } from "@uniswap/v3-periphery/contracts/test/MockTim
 import { MockSwapRouter } from "../test/mocks/MockSwapRouter.sol";
 import { MockAutomationRegistry } from "../test/mocks/MockAutomationRegistry.sol";
 
+/**
+ * @title Network Configuration Helper
+ * @author William Permuy
+ * @notice Manages network-specific configurations for the LoanFi protocol
+ * @dev Implements dynamic configuration management with the following features:
+ *
+ * Architecture Highlights:
+ * 1. Network Detection
+ *    - Automatic network identification
+ *    - Environment-specific settings
+ *    - Seamless testing support
+ *
+ * 2. Mock System
+ *    - Local testing infrastructure
+ *    - Price feed simulation
+ *    - Token emulation
+ *
+ * 3. Configuration Management
+ *    - Centralized address registry
+ *    - Price feed coordination
+ *    - Automation settings
+ */
 contract HelperConfig is Script {
-    // Define structs to hold all our network configuration data. We need to break up the structs because of stack too deep errors.
-    // This makes it easier to pass around network-specific addresses
+    /*//////////////////////////////////////////////////////////////
+                           TYPE DECLARATIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Groups price feed addresses for supported tokens
+     * @dev Maintains oracle infrastructure addresses
+     * @param wethUsdPriceFeed ETH/USD price feed address
+     * @param wbtcUsdPriceFeed BTC/USD price feed address
+     * @param linkUsdPriceFeed LINK/USD price feed address
+     */
     struct PriceFeeds {
-        address wethUsdPriceFeed; // Price feed for ETH/USD
-        address wbtcUsdPriceFeed; // Price feed for BTC/USD
-        address linkUsdPriceFeed; // Price feed for LINK/USD
+        address wethUsdPriceFeed;
+        address wbtcUsdPriceFeed;
+        address linkUsdPriceFeed;
     }
 
+    /**
+     * @notice Groups token addresses for protocol assets
+     * @dev Maintains supported token contract addresses
+     * @param weth WETH token address
+     * @param wbtc WBTC token address
+     * @param link LINK token address
+     */
     struct Tokens {
-        address weth; // WETH token address
-        address wbtc; // WBTC token address
-        address link; // Link token address
+        address weth;
+        address wbtc;
+        address link;
     }
 
+    /**
+     * @notice Groups automation-related configurations
+     * @dev Manages Chainlink Automation settings
+     * @param swapRouter Uniswap V3 Router address
+     * @param automationRegistry Chainlink Registry address
+     * @param upkeepId Chainlink Upkeep identifier
+     * @param liquidationAutomation Automation contract address
+     */
     struct AutomationConfig {
-        uint256 deployerKey; // Private key for deployment
-        address swapRouter; // Uniswap V3 Router
-        address automationRegistry; // Chainlink Automation Registry
-        uint256 upkeepId; // Chainlink Upkeep ID
-        address liquidationAutomation; // Added: Address of deployed LiquidationAutomation
+        address swapRouter;
+        address automationRegistry;
+        uint256 upkeepId;
+        address liquidationAutomation;
     }
 
-    // Main configuration struct that combines all network-specific settings into one object
+    /**
+     * @notice Combines all network-specific configurations
+     * @dev Main configuration structure for protocol deployment
+     * @param priceFeeds Oracle addresses for price data
+     * @param tokens Protocol-supported token addresses
+     * @param automationConfig Automation system settings
+     */
     struct NetworkConfig {
-        PriceFeeds priceFeeds; // Groups all price feed addresses for supported tokens
-        Tokens tokens; // Groups all token contract addresses
-        AutomationConfig automationConfig; // Groups all automation-related settings
+        PriceFeeds priceFeeds;
+        Tokens tokens;
+        AutomationConfig automationConfig;
     }
 
-    // Public state variables to store current network configuration components
-    PriceFeeds public priceFeeds; // Stores active price feed addresses
-    Tokens public tokens; // Stores active token addresses
-    AutomationConfig public automationConfig; // Stores active automation settings
+    /*//////////////////////////////////////////////////////////////
+                            STATE VARIABLES
+    //////////////////////////////////////////////////////////////*/
 
-    // Constants for mock price feed configuration
-    uint8 public constant DECIMALS = 8; // Chainlink price feeds use 8 decimals
-    int256 public constant WETH_USD_PRICE = 2000e8; // Mock ETH price of $2000
-    int256 public constant BTC_USD_PRICE = 30_000e8; // Mock BTC price of $30000
-    int256 public constant LINK_USD_PRICE = 10e8; // Mock Link price of $10
-    uint256 public constant INITIAL_BALANCE = 1000e8; // Initial balance for mock tokens
+    PriceFeeds public priceFeeds;
+    Tokens public tokens;
+    AutomationConfig public automationConfig;
+    NetworkConfig public activeNetworkConfig;
+    uint256 private s_upkeepId;
 
-    // Default private key for local testing (Anvil's first private key)
-    uint256 public constant DEFAULT_ANVIL_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
-
-    // Constants for mock router configuration
+    // Constants
+    uint8 public constant DECIMALS = 8;
+    int256 public constant WETH_USD_PRICE = 2000e8; // $2,000 Mock WETH Price
+    int256 public constant BTC_USD_PRICE = 30_000e8; // $30,000 Mock BTC Price
+    int256 public constant LINK_USD_PRICE = 10e8; // $10 Mock Link Price
+    uint256 public constant INITIAL_BALANCE = 1000e8; // Mock Token Initial Balance
     address public constant MOCK_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984; // Uniswap V3 Factory
 
-    // Store the active network configuration
-    NetworkConfig public activeNetworkConfig;
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
-    // Constructor determines which network config to use based on chainId
+    /**
+     * @notice Initializes network-specific configuration
+     * @dev Automatically detects network and sets appropriate config
+     */
     constructor() {
         // If we're on Sepolia testnet
         if (block.chainid == 11_155_111) {
             activeNetworkConfig = getSepoliaEthConfig();
         } else {
-            // For any other network (local, mainnet, etc)
+            // For local network
             activeNetworkConfig = getOrCreateAnvilEthConfig();
         }
     }
 
-    // Function to update automation registry address after deployment
-    function setLiquidationAutomation(address _liquidationAutomation) public {
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Updates the Chainlink Upkeep ID
+     * @dev Sets the identifier for automation system
+     * @param _upkeepId New upkeep identifier
+     */
+    function setUpkeepId(uint256 _upkeepId) external {
+        s_upkeepId = _upkeepId;
+    }
+
+    /**
+     * @notice Updates automation contract address
+     * @dev Sets the address after deployment
+     * @param _liquidationAutomation New automation contract address
+     */
+    function setLiquidationAutomation(address _liquidationAutomation) external {
         automationConfig.liquidationAutomation = _liquidationAutomation;
     }
 
-    // Returns configuration for Sepolia testnet with real contract addresses
-    function getSepoliaEthConfig() public view returns (NetworkConfig memory) {
+    /*//////////////////////////////////////////////////////////////
+                           PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Provides Sepolia testnet configuration
+     * @dev Returns real contract addresses for testnet deployment
+     * @return NetworkConfig Complete network configuration
+     */
+    function getSepoliaEthConfig() private view returns (NetworkConfig memory) {
         return NetworkConfig({
             priceFeeds: PriceFeeds({
                 // pircefeeds on Sepolia
@@ -91,18 +171,20 @@ contract HelperConfig is Script {
                 link: 0x779877A7B0D9E8603169DdbD7836e478b4624789
             }),
             automationConfig: AutomationConfig({
-                // addresses for key components on sepolia
-                deployerKey: vm.envUint("PRIVATE_KEY"),
                 swapRouter: 0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E,
                 automationRegistry: 0xE16Df59B887e3Caa439E0b29B42bA2e7976FD8b2,
-                upkeepId: vm.envUint("UPKEEP_ID"),
+                upkeepId: s_upkeepId, // Use the stored value
                 liquidationAutomation: address(0) // Will be set after deployment
              })
         });
     }
 
-    // Returns or creates configuration for local testing with mock contracts
-    function getOrCreateAnvilEthConfig() public returns (NetworkConfig memory) {
+    /**
+     * @notice Creates or retrieves local test configuration
+     * @dev Deploys mock contracts for local testing
+     * @return NetworkConfig Complete test configuration
+     */
+    function getOrCreateAnvilEthConfig() private returns (NetworkConfig memory) {
         // If config already exists, return it
         if (activeNetworkConfig.priceFeeds.wethUsdPriceFeed != address(0)) {
             return activeNetworkConfig;
@@ -143,12 +225,26 @@ contract HelperConfig is Script {
             }),
             tokens: Tokens({ weth: address(wethMock), wbtc: address(wbtcMock), link: address(linkMock) }),
             automationConfig: AutomationConfig({
-                deployerKey: DEFAULT_ANVIL_KEY,
                 swapRouter: address(mockRouter),
                 automationRegistry: address(registry),
                 upkeepId: 0,
                 liquidationAutomation: address(0) // Will be set after deployment
              })
         });
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        EXTERNAL VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Retrieves current network name
+     * @dev Used for deployment logging and verification
+     * @return string Network identifier
+     */
+    function getNetworkName() external view returns (string memory) {
+        if (block.chainid == 11_155_111) return "Sepolia";
+        if (block.chainid == 31_337) return "Anvil";
+        return "Unknown";
     }
 }
