@@ -1,5 +1,5 @@
 > [!IMPORTANT]  
-> This repo is for demo purposes only & is still under development 🚧. Use at your own risk! 
+> This repo is for demo purposes only & has not been audited! Use at your own risk!
 
 # 🏦 LoanFi Protocol
 
@@ -211,6 +211,51 @@ forge test --mt <name_of_test>
 ```bash
 forge coverage
 ```
+
+### 🌐 Live Deployment
+
+You can find my latest deployment on Sepolia testnet:
+
+**Core Contracts:**
+- LoanFi: [`0xa027354691Fb919E5B6cDae99E79FF6E7CE5821F`](https://sepolia.etherscan.io/address/0xa027354691Fb919E5B6cDae99E79FF6E7CE5821F)
+- LiquidationAutomation: [`0x32d3291687696DD0248Eb24194779481195d9B60`](https://sepolia.etherscan.io/address/0x32d3291687696DD0248Eb24194779481195d9B60)
+
+**Deployed by:** [`0xed139fAEb82800C77E88e9102977255058fFb65C`](https://sepolia.etherscan.io/address/0xed139fAEb82800C77E88e9102977255058fFb65C)
+
+> [!NOTE]
+> These contracts are deployed on Sepolia testnet for demonstration purposes. Feel free to interact with them or use them as a reference for your own deployment.
+
+### 🚀 Deployment
+
+1. Create & set up environment variables
+```bash
+
+# Add your variables
+SEPOLIA_RPC_URL=your_sepolia_rpc_url
+ETHERSCAN_API_KEY=your_etherscan_api_key
+```
+
+2. Deploy to Sepolia testnet
+```bash
+forge script script/DeployLoanFi.s.sol --rpc-url $SEPOLIA_RPC_URL --account <YOUR-ACCOUNT-NAME> --sender <YOUR_ADDRESS> --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
+```
+
+3. Set up Chainlink Automation
+- Visit https://automation.chain.link/
+- Connect your wallet
+- Click "Register new Upkeep"
+- Select "Custom logic" trigger
+- Enter your deployed LiquidationAutomation contract address
+- Set "Check upkeep" as target function
+- Input `0x` as function data
+- Fund upkeep with LINK tokens (minimum 10 LINK recommended)
+
+4. Verify deployment
+- Check Etherscan for verified contracts
+- Confirm Chainlink Automation registration
+- Monitor upkeep status on Chainlink Automation UI
+
+
 
 ## 🤝 Contributing
 
