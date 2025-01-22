@@ -619,8 +619,7 @@ contract LoanFi_IntegrationsTest is Test {
             tokenAddresses,
             feedAddresses,
             address(0), // Mock swap router
-            address(0), // Mock automation registry
-            0 // Mock upkeep ID
+            address(0) // Mock automation registry
         );
 
         // Mint some mock tokens to our test user
@@ -836,8 +835,7 @@ contract LoanFi_IntegrationsTest is Test {
             tokenAddresses,
             feedAddresses,
             address(0), // Mock swap router
-            address(0), // Mock automation registry
-            0 // Mock upkeep ID
+            address(0) // Mock automation registry
         );
 
         // Mint some mock tokens to our test user
@@ -1052,8 +1050,7 @@ contract LoanFi_IntegrationsTest is Test {
             tokenAddresses,
             feedAddresses,
             address(0), // Mock swap router
-            address(0), // Mock automation registry
-            0 // Mock upkeep ID
+            address(0) // Mock automation registry
         );
 
         // Mint some mock tokens to our test user
@@ -1288,8 +1285,7 @@ contract LoanFi_IntegrationsTest is Test {
             tokenAddresses,
             feedAddresses,
             address(0), // Mock swap router
-            address(0), // Mock automation registry
-            0 // Mock upkeep ID
+            address(0) // Mock automation registry
         );
 
         // Mint some mock tokens to our test user
@@ -1360,8 +1356,7 @@ contract LoanFi_IntegrationsTest is Test {
             testTokens,
             testFeeds,
             address(0), // Mock swap router
-            address(0), // Mock automation registry
-            0 // Mock upkeep ID
+            address(0) // Mock automation registry
         );
 
         // Deploy new LiquidationCore instance
