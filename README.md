@@ -1,5 +1,5 @@
 > [!IMPORTANT]  
-> This repo is for demo purposes only & has not been audited! Use at your own risk!
+> This repo has not been audited! Use at your own risk!
 
 # 🏦 LoanFi Protocol
 
