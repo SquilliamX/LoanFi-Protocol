@@ -6,7 +6,6 @@ import { Errors } from "../src/libraries/Errors.sol";
 import { HelperConfig } from "./HelperConfig.s.sol";
 import { LiquidationEngine } from "../src/Liquidation-Operations/LiquidationEngine.sol";
 import { LiquidationAutomation } from "../src/automation/LiquidationAutomation.sol";
-import { SetupAutomation } from "./Interactions.s.sol";
 import { LoanFi } from "../src/LoanFi.sol";
 
 /**
@@ -41,7 +40,6 @@ contract DeployLoanFi is Script {
     // State variables for network-specific deployment configuration
     address private s_swapRouter; // Address of the Uniswap V3 SwapRouter contract for token swaps during liquidations
     address private s_automationRegistry; // Address of the Chainlink Automation Registry for managing automated liquidations
-    uint256 private s_upkeepId; // Unique identifier for the Chainlink Automation upkeep task
 
     // Declaring Arrays to store allowed collateral token addresses and their corresponding price feeds
     address[] public tokenAddresses;
@@ -94,7 +92,6 @@ contract DeployLoanFi is Script {
         console.log("Deployment verification completed");
 
         setupAutomation();
-        console.log("Automation setup completed");
 
         return loanFi;
     }
@@ -111,16 +108,18 @@ contract DeployLoanFi is Script {
      * - Access control setup
      */
     function setupAutomation() private {
-        // Only run SetupAutomation if we're on a real network
+        // Only run SetupAutomation if we're on a real network (not local)
         if (block.chainid != 31_337) {
-            // 31337 is Anvil's chain ID
-            SetupAutomation automationSetup = new SetupAutomation(); // Create new instance of automation setup contract
-            automationSetup.run(); // Execute the automation setup process
+            console.log("\nTo complete automation setup:");
+            console.log("1. Visit https://automation.chain.link/");
+            console.log("2. Register new upkeep for:", address(liquidationAutomation));
+            console.log("3. Fund the upkeep with LINK tokens");
         } else {
-            // For local testing, just set the automation contract in LiquidationEngine
+            // For local testing, just set the automation contract
             vm.startBroadcast();
             loanFi.setAutomationContract(address(liquidationAutomation));
             vm.stopBroadcast();
+            console.log("Automation setup completed");
         }
     }
 
@@ -155,7 +154,6 @@ contract DeployLoanFi is Script {
         // set the private key from the helperConfig equal to the private key declared at contract level
         s_swapRouter = automationConfig.swapRouter;
         s_automationRegistry = automationConfig.automationRegistry;
-        s_upkeepId = automationConfig.upkeepId;
 
         // Set up our arrays with the token addresses and their corresponding price feeds
         tokenAddresses = [tokens.weth, tokens.wbtc, tokens.link];
@@ -179,7 +177,7 @@ contract DeployLoanFi is Script {
         vm.startBroadcast();
 
         // Deploy main protocol with SwapRouter
-        loanFi = new LoanFi(tokenAddresses, priceFeedAddresses, s_swapRouter, s_automationRegistry, s_upkeepId);
+        loanFi = new LoanFi(tokenAddresses, priceFeedAddresses, s_swapRouter, s_automationRegistry);
 
         // Deploy automation with LiquidationEngine from LoanFi
         liquidationAutomation = new LiquidationAutomation(address(loanFi.liquidationEngine()));
