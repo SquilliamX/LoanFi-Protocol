@@ -221,6 +221,20 @@ This multi-layered approach ensures:
 - CEI (Checks-Effects-Interactions) pattern implementation
 - Formal verification ready code structure
 
+
+### 🌐 Live Deployment
+
+You can find my latest deployment on Sepolia testnet:
+
+**Core Contracts:**
+- LoanFi: [`0xa027354691Fb919E5B6cDae99E79FF6E7CE5821F`](https://sepolia.etherscan.io/address/0xa027354691Fb919E5B6cDae99E79FF6E7CE5821F)
+- LiquidationAutomation: [`0x32d3291687696DD0248Eb24194779481195d9B60`](https://sepolia.etherscan.io/address/0x32d3291687696DD0248Eb24194779481195d9B60)
+
+**Deployed by:** [`0xed139fAEb82800C77E88e9102977255058fFb65C`](https://sepolia.etherscan.io/address/0xed139fAEb82800C77E88e9102977255058fFb65C) (me! 😁)
+
+> [!NOTE]
+> These contracts are deployed on Sepolia testnet for demonstration purposes. Feel free to interact with them or use them as a reference for your own deployment.
+
 ## 💻 Development
 
 ### 📋 Prerequisites
@@ -295,19 +309,6 @@ forge script script/DeployLoanFi.s.sol --rpc-url $SEPOLIA_RPC_URL --account <YOU
 - Check Etherscan for verified contracts
 - Confirm Chainlink Automation registration
 - Monitor upkeep status on Chainlink Automation UI
-
-### 🌐 Live Deployment
-
-You can find my latest deployment on Sepolia testnet:
-
-**Core Contracts:**
-- LoanFi: [`0xa027354691Fb919E5B6cDae99E79FF6E7CE5821F`](https://sepolia.etherscan.io/address/0xa027354691Fb919E5B6cDae99E79FF6E7CE5821F)
-- LiquidationAutomation: [`0x32d3291687696DD0248Eb24194779481195d9B60`](https://sepolia.etherscan.io/address/0x32d3291687696DD0248Eb24194779481195d9B60)
-
-**Deployed by:** [`0xed139fAEb82800C77E88e9102977255058fFb65C`](https://sepolia.etherscan.io/address/0xed139fAEb82800C77E88e9102977255058fFb65C)
-
-> [!NOTE]
-> These contracts are deployed on Sepolia testnet for demonstration purposes. Feel free to interact with them or use them as a reference for your own deployment.
 
 ## 🤝 Contributing
 
