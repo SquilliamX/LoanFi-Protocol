@@ -66,13 +66,11 @@ contract HelperConfig is Script {
      * @dev Manages Chainlink Automation settings
      * @param swapRouter Uniswap V3 Router address
      * @param automationRegistry Chainlink Registry address
-     * @param upkeepId Chainlink Upkeep identifier
      * @param liquidationAutomation Automation contract address
      */
     struct AutomationConfig {
         address swapRouter;
         address automationRegistry;
-        uint256 upkeepId;
         address liquidationAutomation;
     }
 
@@ -97,7 +95,6 @@ contract HelperConfig is Script {
     Tokens public tokens;
     AutomationConfig public automationConfig;
     NetworkConfig public activeNetworkConfig;
-    uint256 private s_upkeepId;
 
     // Constants
     uint8 public constant DECIMALS = 8;
@@ -126,58 +123,8 @@ contract HelperConfig is Script {
     }
 
     /*//////////////////////////////////////////////////////////////
-                           EXTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Updates the Chainlink Upkeep ID
-     * @dev Sets the identifier for automation system
-     * @param _upkeepId New upkeep identifier
-     */
-    function setUpkeepId(uint256 _upkeepId) external {
-        s_upkeepId = _upkeepId;
-    }
-
-    /**
-     * @notice Updates automation contract address
-     * @dev Sets the address after deployment
-     * @param _liquidationAutomation New automation contract address
-     */
-    function setLiquidationAutomation(address _liquidationAutomation) external {
-        automationConfig.liquidationAutomation = _liquidationAutomation;
-    }
-
-    /*//////////////////////////////////////////////////////////////
                            PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Provides Sepolia testnet configuration
-     * @dev Returns real contract addresses for testnet deployment
-     * @return NetworkConfig Complete network configuration
-     */
-    function getSepoliaEthConfig() private view returns (NetworkConfig memory) {
-        return NetworkConfig({
-            priceFeeds: PriceFeeds({
-                // pircefeeds on Sepolia
-                wethUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306,
-                wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
-                linkUsdPriceFeed: 0xc59E3633BAAC79493d908e63626716e204A45EdF
-            }),
-            tokens: Tokens({
-                // token addresses on sepolia
-                weth: 0xdd13E55209Fd76AfE204dBda4007C227904f0a81,
-                wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
-                link: 0x779877A7B0D9E8603169DdbD7836e478b4624789
-            }),
-            automationConfig: AutomationConfig({
-                swapRouter: 0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E,
-                automationRegistry: 0xE16Df59B887e3Caa439E0b29B42bA2e7976FD8b2,
-                upkeepId: s_upkeepId, // Use the stored value
-                liquidationAutomation: address(0) // Will be set after deployment
-             })
-        });
-    }
 
     /**
      * @notice Creates or retrieves local test configuration
@@ -227,7 +174,37 @@ contract HelperConfig is Script {
             automationConfig: AutomationConfig({
                 swapRouter: address(mockRouter),
                 automationRegistry: address(registry),
-                upkeepId: 0,
+                liquidationAutomation: address(0) // Will be set after deployment
+             })
+        });
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         PRIVATE PURE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Provides Sepolia testnet configuration
+     * @dev Returns real contract addresses for testnet deployment
+     * @return NetworkConfig Complete network configuration
+     */
+    function getSepoliaEthConfig() private pure returns (NetworkConfig memory) {
+        return NetworkConfig({
+            priceFeeds: PriceFeeds({
+                // pircefeeds on Sepolia
+                wethUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306,
+                wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
+                linkUsdPriceFeed: 0xc59E3633BAAC79493d908e63626716e204A45EdF
+            }),
+            tokens: Tokens({
+                // token addresses on sepolia
+                weth: 0xdd13E55209Fd76AfE204dBda4007C227904f0a81,
+                wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
+                link: 0x779877A7B0D9E8603169DdbD7836e478b4624789
+            }),
+            automationConfig: AutomationConfig({
+                swapRouter: 0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E,
+                automationRegistry: 0xE16Df59B887e3Caa439E0b29B42bA2e7976FD8b2,
                 liquidationAutomation: address(0) // Will be set after deployment
              })
         });
