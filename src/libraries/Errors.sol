@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.25;
 
 /**
  * @title Errors Library
@@ -216,4 +216,68 @@ library Errors {
      * @dev Prevents unknown function calls and protects against erroneous calls
      */
     error LoanFi__FunctionNotFound();
+
+    /*//////////////////////////////////////////////////////////////
+                         AUTOMATION SETUP ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Thrown when LiquidationAutomation contract deployment verification fails
+     * @dev Critical validation during automation setup process
+     */
+    error Automation__LiquidationAutomationNotDeployed();
+
+    /**
+     * @notice Thrown when HelperConfig contract deployment verification fails
+     * @dev Critical validation during automation setup process
+     */
+    error Automation__HelperConfigNotDeployed();
+
+    /**
+     * @notice Thrown when upkeep registration fails with Chainlink Automation
+     * @dev Critical error during automation setup process
+     */
+    error Automation__RegistrationFailed();
+
+    /**
+     * @notice Thrown when deployer lacks sufficient LINK tokens for upkeep
+     * @dev Validates resources before attempting automation setup
+     * @param required Amount of LINK tokens needed
+     * @param available Current LINK balance of deployer
+     */
+    error Automation__InsufficientLinkBalance(uint256 required, uint256 available);
+
+    /*//////////////////////////////////////////////////////////////
+                         DEPLOYMENT ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Thrown when LoanFi contract deployment fails
+     * @dev Critical validation during protocol deployment
+     */
+    error Deployment__LoanFiDeploymentFailed();
+
+    /**
+     * @notice Thrown when LiquidationAutomation contract deployment fails
+     * @dev Critical validation during protocol deployment
+     */
+    error Deployment__LiquidationAutomationDeploymentFailed();
+
+    /**
+     * @notice Thrown when LiquidationEngine setup fails
+     * @dev Critical validation during protocol deployment
+     */
+    error Deployment__LiquidationEngineSetupFailed();
+
+    /**
+     * @notice Thrown when token configuration is missing
+     * @dev Validates token setup during deployment
+     */
+    error Deployment__TokenConfigurationFailed();
+
+    /**
+     * @notice Thrown when token and price feed arrays don't match
+     * @dev Ensures proper price feed configuration for all tokens
+     */
+    error Deployment__TokenPriceFeedMismatch();
 }
