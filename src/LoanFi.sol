@@ -97,14 +97,12 @@ contract LoanFi is Withdraw, Ownable {
      * @param priceFeedAddresses Corresponding Chainlink price feeds
      * @param swapRouter Uniswap router for liquidation swaps
      * @param automationRegistry Chainlink automation registry
-     * @param upkeepId Chainlink upkeep identifier
      */
     constructor(
         address[] memory tokenAddresses,
         address[] memory priceFeedAddresses,
         address swapRouter,
-        address automationRegistry,
-        uint256 upkeepId
+        address automationRegistry
     )
         Withdraw(tokenAddresses, priceFeedAddresses)
         Ownable(msg.sender)
@@ -112,8 +110,7 @@ contract LoanFi is Withdraw, Ownable {
         liquidationEngine = new LiquidationEngine(
             address(this), // Protocol address
             swapRouter, // DEX integration
-            automationRegistry, // Chainlink automation
-            upkeepId // Upkeep identifier
+            automationRegistry // Chainlink automation
         );
     }
 
