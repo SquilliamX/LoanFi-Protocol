@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.20;
+pragma solidity 0.8.25;
 
 import { Test, console } from "forge-std/Test.sol";
 import { HealthFactor } from "src/HealthFactor.sol";
@@ -49,7 +49,6 @@ contract LoanFi_IntegrationsTest is Test {
     // Arrays for token setup
     address[] public tokenAddresses; // Array to store allowed collateral token addresses
     address[] public feedAddresses; // Array to store corresponding price feed addresses
-    uint256[] public automationValues;
 
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
 
@@ -77,7 +76,6 @@ contract LoanFi_IntegrationsTest is Test {
         // Set up arrays with direct struct access
         tokenAddresses = [tokens.weth, tokens.wbtc, tokens.link];
         feedAddresses = [priceFeeds.wethUsdPriceFeed, priceFeeds.wbtcUsdPriceFeed, priceFeeds.linkUsdPriceFeed];
-        automationValues = [automationConfig.deployerKey, automationConfig.upkeepId];
 
         // If we're on a local Anvil chain (chainId 31337), give our test user some ETH to work with
         if (block.chainid == 31_337) {
