@@ -123,7 +123,7 @@ The protocol features a dual-mode liquidation system designed to maintain stabil
 The protocol implements a sophisticated three-tier liquidation mechanism:
 
 ```mermaid
-graph TD
+graph LR
     A[Unhealthy Position] --> B{Health Factor < 1.0?}
     B -->|Yes| C[Standard Liquidation]
     C --> D{Sufficient Primary Bonus?}
