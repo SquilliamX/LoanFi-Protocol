@@ -222,7 +222,7 @@ This multi-layered approach ensures:
 - Formal verification ready code structure
 
 
-### 🌐 Live Deployment
+## 🌐 Live Deployment
 
 You can find my latest deployment on Sepolia testnet:
 
