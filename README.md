@@ -239,7 +239,6 @@ You can find my latest deployment on Sepolia testnet:
 
 ### 📋 Prerequisites
 - Foundry
-- Node.js
 - Solidity ^0.8.20
 
 ### ⏬ Installation
