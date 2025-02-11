@@ -3,7 +3,7 @@ pragma solidity 0.8.25;
 
 import { Script } from "forge-std/Script.sol";
 import { MockV3Aggregator } from "../test/mocks/MockV3Aggregator.sol";
-import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import { ERC20Mock } from "test/mocks/ERC20Mock.sol";
 import { MockTimeSwapRouter } from "@uniswap/v3-periphery/contracts/test/MockTimeSwapRouter.sol";
 import { MockSwapRouter } from "../test/mocks/MockSwapRouter.sol";
 import { MockAutomationRegistry } from "../test/mocks/MockAutomationRegistry.sol";
@@ -142,13 +142,13 @@ contract HelperConfig is Script {
 
         // Deploy mock price feeds and tokens
         MockV3Aggregator wethUsdPriceFeed = new MockV3Aggregator(DECIMALS, WETH_USD_PRICE);
-        ERC20Mock wethMock = new ERC20Mock();
+        ERC20Mock wethMock = new ERC20Mock("Wrapped Ether", "WETH", msg.sender, INITIAL_BALANCE);
 
         MockV3Aggregator btcUsdPriceFeed = new MockV3Aggregator(DECIMALS, BTC_USD_PRICE);
-        ERC20Mock wbtcMock = new ERC20Mock();
+        ERC20Mock wbtcMock = new ERC20Mock("Wrapped Bitcoin", "WBTC", msg.sender, INITIAL_BALANCE);
 
         MockV3Aggregator linkUsdPriceFeed = new MockV3Aggregator(DECIMALS, LINK_USD_PRICE);
-        ERC20Mock linkMock = new ERC20Mock();
+        ERC20Mock linkMock = new ERC20Mock("Chainlink", "LINK", msg.sender, INITIAL_BALANCE);
 
         // Deploy MockSwapRouter for local testing
         MockSwapRouter mockRouter = new MockSwapRouter();
